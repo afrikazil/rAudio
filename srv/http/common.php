@@ -10,11 +10,11 @@
 	<meta name="application-name" content="rAudio">
 	<meta name="msapplication-tap-highlight" content="no">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-	<link rel="apple-touch-icon" sizes="180x180" href="/assets/img/icon.png">
-	<link rel="icon" href="/assets/img/icon.png">
+	<link rel="apple-touch-icon" sizes="180x180" href="/assets/img/icon.png?v=1728536864">
+	<link rel="icon" href="/assets/img/icon.png?v=1728536864">
 
 <?php
-$hash      = '?v='.time();
+$hash      = '?v=1728536860';
 $page      = $_GET[ 'p' ] ?? '';
 $css       = [ 'colors', 'common' ];
 $logosvg   = file_get_contents( '/srv/http/assets/img/icon.svg' );
