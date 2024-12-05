@@ -1,5 +1,6 @@
 <?php
-require_once 'config.php';
+require_once __DIR__.'/config.php';
+
 function saveCurrentAlbumArt(): array
 {
 	$filePath = trim(shell_exec('mpc --format %file% current'));
@@ -14,7 +15,6 @@ function saveCurrentAlbumArt(): array
 	];
 
 	$process = proc_open($command, $descriptorspec, $pipes);
-
 	if (!is_resource($process)) {
 		return ['error' => 'Не удалось запустить команду mpc albumart'];
 	}
@@ -32,11 +32,11 @@ function saveCurrentAlbumArt(): array
 
 	// Проверка ошибок
 	if ($returnCode !== 0 || empty($binaryData)) {
-		return ['error' => $errorData ?: 'Обложка не найдена'];
+		return ['error' => $errorData ?: 'Обложка не найдена', 'path' => DEFAULT_COVER_ART];
 	}
 
 	// Сохраняем данные в файл
-	if (file_put_contents(COVER_ART, $binaryData)) {
+	if (file_put_contents($_SERVER['DOCUMENT_ROOT'].COVER_ART, $binaryData)) {
 		return ['success' => true, 'path' => COVER_ART];
 	} else {
 		return ['error' => 'Не удалось сохранить файл', 'path' => DEFAULT_COVER_ART];
@@ -44,3 +44,4 @@ function saveCurrentAlbumArt(): array
 }
 
 saveCurrentAlbumArt();
+
