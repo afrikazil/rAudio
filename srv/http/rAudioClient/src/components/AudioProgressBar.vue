@@ -4,8 +4,8 @@
 			<input
 				type="range"
 				min="0"
-				:max="duration"
-				:value="currentTime"
+				:max="playerState.Time"
+				:value="elapsed"
 				@input="seek"
 				class="w-full h-2 rounded-lg cursor-pointer"
 			/>
@@ -13,26 +13,26 @@
 		</div>
 
 		<div class="flex justify-between text-gray-400 text-sm mt-2">
-			<span>{{ formatTime(currentTime) }}</span>
-			<span>{{ formatTime(duration) }}</span>
+			<span>{{ formatTime(elapsed) }}</span>
+			<span>{{ formatTime(playerState.Time) }}</span>
 		</div>
 	</div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { PlayIcon, PauseIcon } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { usePlayerStore } from '@/store/player.js'
 
-// Audio state
-const currentTime = ref(0)
-const duration = ref(100) // Set this to the actual duration of your audio
+const playerStore = usePlayerStore()
+const elapsed = ref(0)
+let timer = null
 
-// Track information
-const currentTrack = ref('Awesome Track')
-const artistName = ref('Amazing Artist')
+playerStore.getPlaybackState()
+
+const playerState = computed(() => playerStore.playerState)
 
 // Computed property for progress percentage
-const progress = computed(() => (currentTime.value / duration.value) * 100)
+const progress = computed(() => (elapsed.value / playerState.value.Time) * 100)
 
 // Function to format time in MM:SS
 const formatTime = (time) => {
@@ -43,12 +43,34 @@ const formatTime = (time) => {
 
 // Function to handle seeking
 const seek = (event) => {
-	currentTime.value = Number(event.target.value)
+	playerStore.setTime(Number(event.target.value))
 	// Here you would also update the actual audio playback position
 }
 
-// In a real implementation, you would need to add event listeners to your audio element
-// to update currentTime and handle the end of the track
+function stopInterval() {
+	if (timer) {
+		clearInterval(timer)
+	}
+}
+
+function startInterval() {
+	stopInterval()
+	timer = setInterval(() => {
+		elapsed.value++
+		if (elapsed.value > playerState.value.Time) {
+			stopInterval()
+		}
+	}, 1000)
+}
+
+watch(
+	playerState,
+	() => {
+		elapsed.value = playerState.value.elapsed
+		startInterval()
+	},
+	{ deep: true }
+)
 </script>
 
 <style scoped>

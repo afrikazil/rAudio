@@ -10,10 +10,18 @@
 		<!-- Cover Art -->
 		<div class="flex-1 flex items-center justify-center p-8">
 			<img
-				src="../assets/imagePlaceholder.png?height=300&width=300"
-				alt="Album cover"
+				v-if="playerState.coverart"
+				:src="`http://192.168.2.26${playerState.coverart}`"
+				:key="playerState.Title"
+				:alt="playerState.Title"
 				class="w-full max-w-xs rounded-lg shadow-lg"
 			/>
+		</div>
+
+		<!-- Track Info -->
+		<div class="px-8 py-4 text-center">
+			<h2 class="text-2xl font-bold mb-2">{{ playerState.Title }}</h2>
+			<p class="text-gray-400">{{ playerState.Artist }}</p>
 		</div>
 
 		<AudioProgressBar />
@@ -45,6 +53,22 @@ import {
 } from 'lucide-vue-next'
 import AudioProgressBar from '@/components/AudioProgressBar.vue'
 import PlayBackControl from '@/components/PlayBackControl.vue'
+import { usePlayerStore } from '@/store/player.js'
+import { watch, computed } from 'vue'
+
+const playerStore = usePlayerStore()
+
+playerStore.getPlaybackState()
+
+const playerState = computed(() => playerStore.playerState)
+
+watch(
+	playerStore,
+	() => {
+		console.log(playerStore.playerState)
+	},
+	{ deep: true }
+)
 </script>
 
 <style scoped>
