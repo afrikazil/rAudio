@@ -6,7 +6,8 @@
 				min="0"
 				:max="playerState.time"
 				:value="elapsed"
-				@input="seek"
+				@input="onInput"
+				@change="onChanged"
 				class="w-full h-2 rounded-lg cursor-pointer"
 			/>
 			<div class="progress-bar" :style="{ width: `${progress}%` }"></div>
@@ -25,6 +26,7 @@ import { usePlayerStore } from '@/store/player.js'
 
 const playerStore = usePlayerStore()
 const elapsed = ref(0)
+const newElepsed = ref(0);
 let timer = null
 
 const playerState = computed(() => playerStore.playerState)
@@ -40,10 +42,18 @@ const formatTime = (time) => {
 }
 
 // Function to handle seeking
-const seek = (event) => {
-	playerStore.setTime(Number(event.target.value))
+function onInput(event){
+	newElepsed.value = event.target.value;
 	// Here you would also update the actual audio playback position
 }
+
+function onChanged(){
+	const perc = (newElepsed.value/playerState.value.time*100+1).toFixed(0)+"%";
+	newElepsed.value = 0;
+	playerStore.changePlaybackStatus({ command: `seek ${perc}`, params:{clearCommand: true }})
+}
+
+
 
 function stopInterval() {
 	if (timer) {
@@ -55,7 +65,7 @@ function startInterval() {
 	stopInterval()
 	timer = setInterval(() => {
 		elapsed.value++
-		if (elapsed.value > playerState.value.Time) {
+		if (elapsed.value > playerState.value.time) {
 			stopInterval()
 		}
 	}, 1000)

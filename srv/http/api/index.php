@@ -29,6 +29,8 @@ if ($command == 'command') {
 
 // Декодируем JSON в ассоциативный массив
 	$data = json_decode($json, true);
+	$params = $data['params'];
+
 	$response = sendCommand($data['command']);
 	$cover = saveCurrentAlbumArt();
 	echo json_encode(
