@@ -45,6 +45,9 @@ export const usePlayerStore = defineStore('playerState', {
 		},
 		updateTime() {
 			// after ws return lastvalue, write it into store
+		},
+		changePlaybackStatus(command){
+
 		}
 	}
 })
