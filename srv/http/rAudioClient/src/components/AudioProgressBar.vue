@@ -4,7 +4,7 @@
 			<input
 				type="range"
 				min="0"
-				:max="playerState.Time"
+				:max="playerState.time"
 				:value="elapsed"
 				@input="seek"
 				class="w-full h-2 rounded-lg cursor-pointer"
@@ -14,7 +14,7 @@
 
 		<div class="flex justify-between text-gray-400 text-sm mt-2">
 			<span>{{ formatTime(elapsed) }}</span>
-			<span>{{ formatTime(playerState.Time) }}</span>
+			<span>{{ formatTime(playerState.time) }}</span>
 		</div>
 	</div>
 </template>
@@ -27,12 +27,10 @@ const playerStore = usePlayerStore()
 const elapsed = ref(0)
 let timer = null
 
-playerStore.getPlaybackState()
-
 const playerState = computed(() => playerStore.playerState)
 
 // Computed property for progress percentage
-const progress = computed(() => (elapsed.value / playerState.value.Time) * 100)
+const progress = computed(() => (elapsed.value / playerState.value.time) * 100)
 
 // Function to format time in MM:SS
 const formatTime = (time) => {
@@ -66,7 +64,7 @@ function startInterval() {
 watch(
 	playerState,
 	() => {
-		elapsed.value = playerState.value.elapsed
+		elapsed.value = playerState.value.currentTime
 		startInterval()
 	},
 	{ deep: true }

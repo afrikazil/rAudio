@@ -4,7 +4,7 @@ import cors from 'cors'
 
 const app = express()
 const PORT = process.env.PORT || 3000
-const TARGET_URL = 'http://192.168.2.26' // Replace with your target server URL
+const TARGET_URL = 'http://192.168.2.26/api' // Replace with your target server URL
 
 app.use(cors()) //может быть мешает
 

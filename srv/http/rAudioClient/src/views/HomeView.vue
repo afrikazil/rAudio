@@ -10,18 +10,18 @@
 		<!-- Cover Art -->
 		<div class="flex-1 flex items-center justify-center p-8">
 			<img
-				v-if="playerState.coverart"
-				:src="`http://192.168.2.26${playerState.coverart}`"
-				:key="playerState.Title"
-				:alt="playerState.Title"
+				v-if="playerState.cover"
+				:src="`http://192.168.2.26${playerState.cover}`"
+				:key="playerState.title"
+				:alt="playerState.title"
 				class="w-full max-w-xs rounded-lg shadow-lg"
 			/>
 		</div>
 
 		<!-- Track Info -->
-		<div class="px-8 py-4 text-center">
-			<h2 class="text-2xl font-bold mb-2">{{ playerState.Title }}</h2>
-			<p class="text-gray-400">{{ playerState.Artist }}</p>
+		<div class="px-8 py-4 text-center" v-if="playerState.title">
+			<h2 class="text-2xl font-bold mb-2">{{ playerState.title }}</h2>
+			<p class="text-gray-400">{{ playerState.artist }}</p>
 		</div>
 
 		<AudioProgressBar />

@@ -31,8 +31,12 @@ import {
 	SkipBackIcon,
 	SkipForwardIcon
 } from 'lucide-vue-next'
-import { ref } from 'vue'
-const isPlaying = ref(false)
+import { computed } from 'vue'
+import { usePlayerStore } from '@/store/player.js'
+
+const playerStore = usePlayerStore()
+
+const isPlaying = computed(() => playerStore.playerState.playbackStatus === 'play')
 const togglePlayPause = () => {
 	isPlaying.value = !isPlaying.value
 }
