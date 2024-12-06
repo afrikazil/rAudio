@@ -27,7 +27,6 @@ export const usePlayerStore = defineStore('playerState', {
 		async getPlaybackState() {
 			try {
 				this.playerState = await apiService.postJson('/status',)
-				console.log(this.playerState)
 			} catch (e) {
 				console.error(e)
 			}
@@ -46,8 +45,10 @@ export const usePlayerStore = defineStore('playerState', {
 		updateTime() {
 			// after ws return lastvalue, write it into store
 		},
-		changePlaybackStatus(command){
+		async changePlaybackStatus(params={}){
+			this.playerState = await apiService.postJson('/command',params)
 
+			console.log('ee',this.playerState)
 		}
 	}
 })

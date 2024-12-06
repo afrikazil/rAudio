@@ -3,7 +3,7 @@
 		<button class="text-gray-400 hover:text-white transition-colors">
 			<ShuffleIcon class="w-6 h-6" />
 		</button>
-		<button class="text-white">
+		<button class="text-white" @click="changeTrack('prev')">
 			<SkipBackIcon class="w-8 h-8" />
 		</button>
 		<button
@@ -13,7 +13,7 @@
 			<PlayIcon v-if="!isPlaying" class="w-8 h-8" />
 			<PauseIcon v-else class="w-8 h-8" />
 		</button>
-		<button class="text-white">
+		<button class="text-white" @click="changeTrack('next')">
 			<SkipForwardIcon class="w-8 h-8" />
 		</button>
 		<button class="text-gray-400 hover:text-white transition-colors">
@@ -34,13 +34,17 @@ import {
 import { computed } from 'vue'
 import { usePlayerStore } from '@/store/player.js'
 
-const playerStore = usePlayerStore();
+const playerStore = usePlayerStore()
 
 const isPlaying = computed(() => playerStore.playerState.playbackStatus === 'play')
-const togglePlayPause = () => {
-	isPlaying.value = !isPlaying.value
+function togglePlayPause() {
+	playerStore.playerState.playbackStatus =  isPlaying.value ? 'pause' : 'play'
 
+	playerStore.changePlaybackStatus({ command: playerStore.playerState.playbackStatus })
+}
 
+function changeTrack(command){
+	playerStore.changePlaybackStatus({ command })
 }
 </script>
 
