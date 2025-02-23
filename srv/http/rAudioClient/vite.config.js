@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
 			}
 		},
 		build: {
-			outDir: '../front', // Указываем путь к папке сборки
+			outDir: '../frontend', // Указываем путь к папке сборки
 			watch: {},
 			emptyOutDir: true // Очищает папку перед сборкой
 		},
