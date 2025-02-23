@@ -5,7 +5,7 @@
 import { RouterView } from 'vue-router'
 import { usePlayerStore } from '@/store/player.js'
 const playerStore = usePlayerStore()
-const ws = new WebSocket('ws://192.168.2.26:8181')
+const ws = new WebSocket(`ws://raudio.local:8181`)
 
 function modifyPlayer(data) {
 	Object.entries(data).forEach(([key, value]) => {
@@ -29,11 +29,10 @@ ws.onopen = () => {
 	var interval = setInterval(() => {
 		if (ws.readyState === 1) {
 			clearInterval(interval)
-			ws.send('{ "client": "add" }');
-			ws.send('{ "mpd": "state" }');
+			ws.send('{ "client": "add" }')
+			ws.send('{ "mpd": "state" }')
 
 			console.log('ready')
-
 		}
 	}, 100)
 }
@@ -65,4 +64,3 @@ ws.addEventListener('close', () => {
 
 window.zaz = ws
 </script>
-

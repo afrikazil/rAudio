@@ -11,7 +11,7 @@
 		<div class="flex-1 flex items-center justify-center p-8">
 			<img
 				v-if="playerState.cover"
-				:src="`http://192.168.2.26${playerState.cover}`"
+				:src="`http://raudio.local${playerState.cover}`"
 				:key="playerState.title"
 				:alt="playerState.title"
 				class="w-full max-w-xs rounded-lg shadow-lg"
