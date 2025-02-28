@@ -5,27 +5,16 @@
 killProcess relaystimer
 echo $$ > $dirshm/pidrelaystimer
 
-timer=$1
-timerfile=$dirshm/relayson
-echo $timer > $timerfile
+timer=$( getVar timer $dirsystem/relays.conf )
 i=$timer
 while sleep 60; do
-	playing=
-	if  aplay -l | grep -q -m1 Loopback; then
-		grep -q -m1 '^state.*play' $dirshm/status && playing=1
-	elif grep -q -m1 RUNNING /proc/asound/card*/pcm*p/sub*/status; then # state: RUNNING
-		playing=1
-	fi
-	if [[ $playing ]]; then
-		(( $i != $timer )) && echo $timer > $timerfile
+	if grep -q -m1 '^state.*play' $dirshm/status || grep -q -m1 RUNNING /proc/asound/card*/pcm*p/sub*/status; then
+		i=$timer
 	else
-		i=$( < $timerfile )
-		(( $i == 1 )) && $dirbash/relays.sh off && exit
-# --------------------------------------------------------------------
 		(( i-- ))
-		echo $i > $timerfile
-		(( $i > 1 )) && continue
-		
-		pushData relays '{ "timer": '$timer' }'
+		case $i in
+			1 ) pushData relays '{ "countdown": true }';;
+			0 ) $dirbash/relays.sh off && break;;
+		esac
 	fi
 done

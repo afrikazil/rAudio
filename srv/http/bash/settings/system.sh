@@ -2,17 +2,24 @@
 
 . /srv/http/bash/common.sh
 
-filemodule=/etc/modules-load.d/raspberrypi.conf
+file_cmdline=/boot/cmdline.txt
+file_config=/boot/config.txt
+file_module=/etc/modules-load.d/raspberrypi.conf
+
 args2var "$1"
 
 configTxt() { # each $CMD removes each own lines > reappends if enable or changed
-	local chip i2clcdchar i2cmpdoled list module name spimpdoled tft
-	if [[ ! -e /tmp/config.txt ]]; then # files at boot for comparison: cmdline.txt, config.txt, raspberrypi.conf
-		cp /boot/cmdline.txt /tmp
-		grep -Ev '^#|^\s*$' /boot/config.txt | sort -u > /tmp/config.txt
-		grep -Ev '^#|^\s*$' $filemodule 2> /dev/null | sort -u > /tmp/raspberrypi.conf
+	local chip i2clcdchar i2cmpdoled module spimpdoled tft
+	tmp_cmdline=/tmp/cmdline.txt
+	tmp_config=/tmp/config.txt
+	tmp_module=/tmp/raspberrypi.conf
+	if [[ ! -e $tmp_config ]]; then # files at boot for comparison
+		for f in $file_cmdline $file_config $file_module; do
+			[[ -s $f ]] && grep -Ev '^#|^\s*$' $f | sort -u > /tmp/$( basename $f )
+		done
 	fi
-	[[ ! $config ]] && config=$( < /boot/config.txt ) # if no config set from $CMD
+	[[ ! $config ]] && config=$( < $file_config )
+	config=$( grep -Ev '^#|^\s*$' <<< $config )
 	if [[ $i2cset ]]; then
 		grep -E -q 'dtoverlay=.*:rotate=' <<< $config && tft=1
 		[[ -e $dirsystem/lcdchar ]] && i2clcdchar=1
@@ -20,7 +27,7 @@ configTxt() { # each $CMD removes each own lines > reappends if enable or change
 			chip=$( grep mpd_oled /etc/systemd/system/mpd_oled.service | cut -d' ' -f3 )
 			[[ $chip == 1 || $chip == 7 ]] && spimpdoled=1 || i2cmpdoled=1
 		fi
-		config=$( grep -Ev 'dtparam=i2c_arm=on|dtparam=spi=on|dtparam=i2c_arm_baudrate' <<< $config )
+		config=$( grep -Ev '^dtparam=i2c_arm=on|^dtparam=spi=on|^dtparam=i2c_arm_baudrate' <<< $config )
 		[[ $tft || $i2clcdchar || $i2cmpdoled ]] && config+='
 dtparam=i2c_arm=on'
 		[[ $i2cmpdoled ]] && config+="
@@ -28,32 +35,42 @@ dtparam=i2c_arm_baudrate=$BAUD" # $baud from mpdoled )
 		[[ $tft || $spimpdoled ]] && config+='
 dtparam=spi=on'
 		
-		module=$( grep -Ev 'i2c-bcm2708|i2c-dev|snd-soc-wm8960|^#|^\s*$' $filemodule 2> /dev/null )
+		module=$( grep -Evs 'i2c-bcm2708|i2c-dev|snd-soc-wm8960|^#|^\s*$' $file_module )
 		[[ $tft || $i2clcdchar ]] && module+='
 i2c-bcm2708'
 		if [[ $tft || $i2clcdchar || $i2cmpdoled ]]; then
 			module+='
 i2c-dev'
-			! ls /dev/i2c* &> /dev/null && rebooti2c=1
+			! ls /dev/i2c* &> /dev/null && reboot=1
 		elif grep -q wm8960-soundcard <<< $config; then
 			module+='
 i2c-dev
 snd-soc-wm8960'
 		fi
-		grep -Ev '^#|^\s*$' <<< $module | sort -u > $filemodule
-		[[ ! $rebooti2c ]] && ! cmp -s /tmp/raspberrypi.conf $filemodule && rebooti2c=1
-		[[ ! -s $filemodule ]] && rm -f $filemodule
+		[[ -e $module ]] && sort -u <<< $module > $file_module || rm -f $file_module
 	fi
-	grep -Ev '^#|^\s*$' <<< $config | sort -u > /boot/config.txt
+	if [[ $poweraudiophonic ]]; then
+		config+="
+dtoverlay=gpio-poweroff,gpiopin=22
+dtoverlay=gpio-shutdown,gpio_pin=17,active_low=0,gpio_pull=down"
+	else
+		config=$( grep -Ev 'gpio-poweroff|gpio-shutdown' <<< $config )
+	fi
+	awk NF <<< $config | sort -u > $file_config
 	pushRefresh
-	[[ $CMD == powerbutton ]] && return
-	
-	if [[ $rebooti2c ]] \
-		|| ! cmp -s /tmp/config.txt /boot/config.txt \
-		|| ! cmp -s /tmp/cmdline.txt /boot/cmdline.txt; then
-		label=$( sed -E -n "/$CMD.*=>/ {s/.*'label' => '|',.*//g; p}" /srv/http/settings/system.php )
-		notify $CMD "$label" 'Reboot required.' 5000
+	if [[ ! $reboot ]]; then
+		if ! cmp -s $tmp_config $file_config || ! cmp -s $tmp_cmdline $file_cmdline; then
+			reboot=1
+		else
+			count=$( ls $tmp_module $file_module | wc -l )
+			(( $count == 1 )) || ( (( $count == 2 )) && ! cmp -s $tmp_module $file_module ) && reboot=1
+		fi
+	fi
+	if [[ $reboot ]]; then
 		appendSortUnique $CMD $dirshm/reboot
+		pushData reboot '{ "id": '$( line2array $( < $dirshm/reboot ) )' }'
+	else
+		sed -i "/$CMD/ d" $dirshm/reboot
 	fi
 }
 soundProfile() {
@@ -79,15 +96,18 @@ case $CMD in
 
 audio )
 	enableFlagSet
-	config=$( grep -v dtparam=audio=on /boot/config.txt )
-	[[ $ON ]] && config+="
+	if [[ $ON ]] ; then
+		config="$( < $file_config )
 dtparam=audio=on"
+	else
+		config=$( grep -v ^dtparam=audio=on $file_config )
+	fi
 	configTxt
 	;;
 bluetooth )
-	config=$( grep -E -v 'disable-bt' /boot/config.txt )
 	inOutputConf device.*bluealsa && bluealsa=1
 	if [[ $ON ]]; then
+		config=$( grep -E -v 'disable-bt' $file_config )
 		if [[ $DISCOVERABLE ]]; then
 			yesno=yes
 			touch $dirsystem/btdiscoverable
@@ -105,8 +125,8 @@ bluetooth )
 		[[ $FORMAT ]] && touch $dirsystem/btformat || rm -f $dirsystem/btformat
 		[[ $FORMAT != $prevbtformat ]] && $dirsettings/player-conf.sh
 	else
-		config+='
-dtoverlay=disable-bt'
+		config="$( < $file_config )
+dtoverlay=disable-bt"
 		if rfkill | grep -q -m1 bluetooth; then
 			systemctl stop bluetooth
 			rm -f $dirshm/{btdevice,btreceiver,btsender}
@@ -122,54 +142,60 @@ bluetoothstart )
 	bluetoothctl discoverable-timeout 0 &> /dev/null
 	bluetoothctl pairable yes &> /dev/null
 	;;
-hddsleep )
+gpiopintoggle )
+	[[ $( gpioget -a -c0 --numeric $PIN ) == 0 ]] && onoff=1 || onoff=0
+	gpioset -t0 -c0 $PIN=$onoff
+	echo $onoff
+	;;
+hddapm )
 	hdparm -q -B $LEVEL $DEV
 	hdparm -q -S $LEVEL $DEV
 	pushRefresh
 	;;
 hostname )
-	nameprev=$( hostname )
 	hostnamectl hostname $NAME
 	sed -i -E 's/(name = ").*/\1'$NAME'"/' /etc/shairport-sync.conf
 	sed -i -E 's/^(friendlyname = ).*/\1'$NAME'/' /etc/upmpdcli.conf
 	systemctl try-restart avahi-daemon bluetooth localbrowser mpd smb shairport-sync shairport spotifyd upmpdcli
-	mv /var/lib/iwd/ap/{$nameprev,$NAME}.ap
+	nameprev=$( ls /var/lib/iwd/ap | head -1 )
+	mv /var/lib/iwd/ap/{$nameprev,$NAME.ap}
 	[[ -e $dirsystem/ap ]] && $dirsettings/features.sh iwctlap
 	pushData refresh '{ "page": "system", "hostname": "'$NAME'" }'
 	;;
 i2seeprom )
-	config=$( grep -v force_eeprom_read /boot/config.txt )
-	[[ $ON ]] && config+="
+	if [[ $ON ]]; then
+		config="$( < $file_config )
 force_eeprom_read=0"
+	else
+		config=$( grep -v ^force_eeprom_read $file_config )
+	fi
 	configTxt
-	;;
-i2slist )
-	cat  /srv/http/assets/data/system-i2s.json
 	;;
 i2smodule )
 	prevaplayname=$( getContent $dirsystem/audio-aplayname )
-	config=$( grep -Ev "dtparam=i2s=on|dtoverlay=$prevaplayname|gpio=25=op,dh|dtparam=audio=on" /boot/config.txt )
-	rm -f /boot/cirrus /etc/modprobe.d/cirrus.conf
-	if [[ $APLAYNAME != none ]]; then
+	cirrusconf=/etc/modprobe.d/cirrus.conf
+	config=$( grep -Ev "^dtparam=i2s=on|^dtoverlay=$prevaplayname|gpio=25=op,dh|^dtparam=audio=on" $file_config )
+	if [[ $APLAYNAME ]]; then
 		config+="
 dtparam=i2s=on
 dtoverlay=$APLAYNAME"
 		[[ $OUTPUT == 'Pimoroni Audio DAC SHIM' ]] && config+="
 gpio=25=op,dh"
-		! grep -q gpio-shutdown /boot/config.txt && systemctl disable --now powerbutton
+		! grep -q gpio-shutdown $file_config && systemctl disable --now powerbutton
 		echo $APLAYNAME > $dirsystem/audio-aplayname
 		echo $OUTPUT > $dirsystem/audio-output
 		if [[ $APLAYNAME == cirrus-wm5102 ]]; then
-			echo softdep arizona-spi pre: arizona-ldo1 > /etc/modprobe.d/cirrus.conf
+			[[ ! -e $cirrusconf ]] && echo softdep arizona-spi pre: arizona-ldo1 > $cirrusconf
 			echo $OUTPUTTYPE > $dirsystem/audio-wm5102
-			$dirsettings/player-wm5102.sh "$OUTPUTTYPE"
-		elif [[ $APLAYNAME == wm8960-soundcard ]]; then
-			i2cset=1
+			aplay -l | grep -q wm5102 && $dirsettings/player-wm5102.sh "$OUTPUTTYPE"
+		else
+			rm -f $cirrusconf
+			[[ $APLAYNAME == wm8960-soundcard ]] && i2cset=1
 		fi
 	else
 		config+="
 dtparam=audio=on"
-	rm -f $dirsystem/audio-{aplayname,output}
+		rm -f $dirsystem/audio-{aplayname,output} $cirrusconf
 	fi
 	configTxt
 	;;
@@ -183,38 +209,8 @@ lcdcharset )
 	$dirbash/lcdchar.py $ACTION
 	;;
 mirror )
-	file=/etc/pacman.d/mirrorlist
-	[[ $MIRROR ]] && MIRROR+=.
-	server='Server = http://'$MIRROR'mirror.archlinuxarm.org/$arch/$repo'
-	[[ $server != $( grep -m1 ^Server $file ) ]] && echo $server > $file
+	echo 'Server = http://'$MIRROR'.mirror.archlinuxarm.org/$arch/$repo' > /etc/pacman.d/mirrorlist
 	pushRefresh
-	;;
-mirrorlist )
-	file=/etc/pacman.d/mirrorlist
-	list=$( curl -sfL https://github.com/archlinuxarm/PKGBUILDs/raw/master/core/pacman-mirrorlist/mirrorlist )
-	if [[ $? == 0 ]]; then
-		mirror=$( sed -n '/^Server/ {s|\.*mirror.*||; s|.*//||; p}' $file )
-		[[ $mirror ]] && list=$( sed "0,/^Server/ s|//.*mirror|//$mirror.mirror|" <<< $list )
-		echo "$list" > $file
-	else
-		list=$( < $file )
-	fi
-	lines=$( sed -E -n '/^### Mirror/,$ {/^\s*$|^### Mirror/ d; s|.*//(.*)\.mirror.*|\1|; p}' <<< $list )
-	codelist='"Auto":""'
-	while read line; do
-		if [[ ${line:0:4} == '### ' ]];then
-			city=
-			country=${line:4}
-		elif [[ ${line:0:3} == '## ' ]];then
-			city=${line:3}
-		else
-			[[ $city ]] && cc="$country - $city" || cc=$country
-			[[ $cc == $ccprev ]] && cc+=" 2"
-			ccprev=$cc
-			codelist+=',"'$cc'":"'$line'"'
-		fi
-	done <<< $lines
-	echo '{ '$codelist' }'
 	;;
 mountforget )
 	umount -l "$MOUNTPOINT"
@@ -265,68 +261,28 @@ mpdoled )
 	;;
 ntp )
 	file=/etc/systemd/timesyncd.conf
-	if [[ $NTP != $( getVar NTP $file ) ]]; then
-		echo "\
+	echo "\
 [Time]
 NTP=$NTP" > $file
-		timedatectl set-ntp true
-	fi
+	timedatectl set-ntp true
 	pushRefresh
-	;;
-packagelist )
-	filepackages=/tmp/packages
-	if [[ ! -e $filepackages ]]; then
-		pacmanqi=$( pacman -Qi | grep -E '^Name|^Vers|^Desc|^URL' )
-		while read line; do
-			case ${line:0:3} in
-			Nam ) name=$line;;
-			Ver ) version=$line;;
-			Des ) description=$line;;
-			URL ) url=$line
-				  lines+="\
-$url
-$name
-$version
-$description
-"
-;;
-			esac
-		done <<< $pacmanqi
-		sed -E 's|^URL.*: (.*)|<a href="\1" target="_blank">|
-				s|^Name.*: (.*)|\1</a> |
-				s|^Vers.*: (.*)|<gr>\1</gr>|
-				s|^Desc.*: (.*)| - \1<br>|' <<< $lines \
-				> /tmp/packages
-	fi
-	grep -B1 -A2 --no-group-separator ^${INI,} $filepackages
 	;;
 powerbutton )
 	enableFlagSet
-	config=$( grep -Ev 'gpio-poweroff|gpio-shutdown' /boot/config.txt )
 	if [[ $ON ]]; then
 		if [[ $SW ]]; then
 			serviceRestartEnable
-			if [[ $SW != 5 ]]; then
-				config+='
-dtoverlay=gpio-shutdown,gpio_pin='$RESERVED
-			fi
-		else # audiophonic
-			config+="
-dtoverlay=gpio-poweroff,gpiopin=22
-dtoverlay=gpio-shutdown,gpio_pin=17,active_low=0,gpio_pull=down"
+		else
+			poweraudiophonic=1
 		fi
 	else
 		if systemctl -q is-active powerbutton; then
 			systemctl disable --now powerbutton
-			. $dirsystem/powerbutton.conf
+			led=$( getVar led $dirsystem/powerbutton.conf )
 			gpioset -t0 -c0 $led=0
 		fi
 	fi
 	configTxt
-	;;
-rebootlist )
-	getContent $dirshm/reboot
-	rm -f $dirshm/{reboot,backup.gz}
 	;;
 regdomlist )
 	cat /srv/http/assets/data/regdomcodes.json
@@ -335,6 +291,20 @@ relays )
 	enableFlagSet
 	pushRefresh
 	pushData display '{ "submenu": "relays", "value": '$TF' }'
+	[[ ! -e $dirshm/relayson ]] && exit
+# --------------------------------------------------------------------
+	if grep -q timeron=true $dirsystem/relays.conf; then
+		$dirbash/relays-timer.sh &> /dev/null &
+	else
+		killProcess relaystimer
+	fi
+	;;
+relaysstatus ) 
+	for p in $PINS; do
+		[[ $( gpioget -a -c0 --numeric $p ) == 0 ]] && tf=false || tf=true
+		on+=", $tf"
+	done
+	echo '[ '${on:1}' ]'
 	;;
 rotaryencoder )
 	if [[ $ON ]]; then
@@ -373,12 +343,6 @@ shareddatadisable )  # server rAudio / other server
 	pushRefresh
 	pushData refresh '{ "page": "features", "shareddata": false }'
 	;;
-softlimit )
-	config=$( grep -v temp_soft_limit /boot/config.txt )
-	[[ $ON ]] && config+='
-temp_soft_limit='$SOFTLIMIT
-	configTxt
-	;;
 soundprofileset )
 	soundProfile
 	;;
@@ -396,99 +360,11 @@ soundprofile )
 	fi
 	pushRefresh
 	;;
-statusaudio )
-	echo "\
-<bll># aplay -l | grep bcm2835</bll>
-$( aplay -l 2> /dev/null | grep bcm2835 || echo '(No audio devices)' )"
-	;;
-statusbluetooth )
-	echo "\
-<bll># bluetoothctl show</bll>
-$( bluetoothctl show )"
-	;;
-statusstatus )
-	filebootlog=/tmp/bootlog
-	[[ -e $filebootlog ]] && cat $filebootlog && exit
-# --------------------------------------------------------------------
-	startupfinished=$( systemd-analyze | head -1 )
-	if grep -q 'Startup finished' <<< $startupfinished; then
-		echo "\
-<bll># systemd-analyze | head -1</bll>
-$startupfinished
-
-<bll># journalctl -b</bll>
-$( journalctl -b | sed -n '1,/Startup finished.*kernel/ p' )" | tee $filebootlog
-	else
-		journalctl -b
-	fi
-	;;
-statusstorage )
-	echo -n "\
-<bll># cat /etc/fstab</bll>
-$( < /etc/fstab )"
-	;;
-statussystem )
-	firmware="pacman -Qs 'firmware|bootloader' | grep -Ev '^\s|whence' | cut -d/ -f2"
-	config="\
-<bll># cat /boot/cmdline.txt</bll>
-$( < /boot/cmdline.txt )
-
-<bll># cat /boot/config.txt</bll>
-$( grep -Ev '^#|^\s*$' /boot/config.txt )
-
-<bll># $firmware</bll>
-$( eval $firmware )"
-	raspberrypiconf=$( cat $filemodule 2> /dev/null )
-	if [[ $raspberrypiconf ]]; then
-		config+="
-
-<bll># $filemodule</bll>
-$raspberrypiconf"
-		dev=$( ls /dev/i2c* 2> /dev/null | cut -d- -f2 )
-		[[ $dev ]] && config+="
-		
-<bll># i2cdetect -y $dev</bll>
-$(  i2cdetect -y $dev )"
-	fi
-	echo "$config"
-	;;
-statustimezone )
-	echo "\
-<bll># timedatectl</bll>
-$( timedatectl )"
-	;;
-statuswlan )
-	echo '<bll># iw reg get</bll>'
-	iw reg get
-	echo '<bll># iw list</bll>'
-	iw list
-	;;
-storageinfo )
-	if [[ ${DEV:0:8} == /dev/mmc ]]; then
-		dev=/sys/block/${DEV:5:-2}/device
-		for k in cid csd scr; do
-			data+="\
-<bll># mmc $k read $dev</bll>
-$( mmc $k read $dev )
-"
-		done
-		echo "$data"
-	else
-		dev=$( tr -d 0-9 <<< $DEV )
-		echo -n "\
-<bll># lsblk -no vendor,model $dev</bll>
-$( lsblk -no vendor,model $dev )
-
-<bll># hdparm -I $DEV</bll>
-$( hdparm -I $DEV | sed -E -e '1,3 d' -e '/^ATA device|Media.*:|Serial.*:|Transport:/ d' )"
-	fi
-	;;
 tft )
-	config=$( grep -Ev 'hdmi_force_hotplug|:rotate=' /boot/config.txt )
-	sed -i 's/ fbcon=map:10 fbcon=font:ProFont6x11//' /boot/cmdline.txt
+	config=$( grep -Ev '^hdmi_force_hotplug|:rotate=' $file_config )
+	sed -i 's/ fbcon=map:10 fbcon=font:ProFont6x11//' $file_cmdline
 	if [[ $ON ]]; then
-		[[ $MODEL != tft35a ]] && echo $MODEL > $dirsystem/lcdmodel || rm $dirsystem/lcdmodel
-		sed -i '1 s/$/ fbcon=map:10 fbcon=font:ProFont6x11/' /boot/cmdline.txt
+		sed -i '1 s/$/ fbcon=map:10 fbcon=font:ProFont6x11/' $file_cmdline
 		rotate=$( getVar rotate $dirsystem/localbrowser.conf )
 		config+="
 hdmi_force_hotplug=1
@@ -504,7 +380,7 @@ dtoverlay=$MODEL:rotate=$rotate"
 	configTxt
 	;;
 tftcalibrate )
-	rotate=$( grep rotate /boot/config.txt | cut -d= -f3 )
+	rotate=$( grep rotate $file_config | cut -d= -f3 )
 	cp -f /etc/X11/{lcd$rotate,xorg.conf.d/99-calibration.conf}
 	systemctl stop localbrowser
 	value=$( DISPLAY=:0 xinput_calibrator | grep Calibration | cut -d'"' -f4 )

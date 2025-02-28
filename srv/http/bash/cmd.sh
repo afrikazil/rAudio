@@ -106,7 +106,7 @@ playerStop() {
 plClear() {
 	mpc -q clear
 	radioStop
-	rm -f $dirsystem/librandom $dirshm/playlist
+	rm -f $dirsystem/librandom $dirshm/playlist*
 	[[ $CMD == mpcremove ]] && pushData playlist '{ "blank": true }'
 }
 pushPlaylist() {
@@ -123,7 +123,9 @@ pushRadioList() {
 	pushData radiolist '{ "type": "webradio" }'
 }
 pushSavedPlaylist() {
-	pushData savedplaylist $( php /srv/http/playlist.php list )
+	[[ ! $( ls $dirdata/playlist ) ]] && pushData playlists -1 && exit
+# --------------------------------------------------------------------
+	pushData playlists $( php /srv/http/playlist.php list )
 }
 radioStop() {
 	if [[ -e $dirshm/radio ]]; then
@@ -134,7 +136,7 @@ radioStop() {
 	fi
 }
 savedPlCount() {
-	playlists=$( ls -1 $dirplaylists | wc -l )
+	playlists=$( ls $dirplaylists | wc -l )
 	grep -q '"playlists".*,' $dirmpd/counts && playlists+=,
 	sed -i -E 's/("playlists" *: ).*/\1'$playlists'/' $dirmpd/counts
 	pushSavedPlaylist
@@ -309,7 +311,7 @@ coverartreset )
 	if [[ ${COVERFILE:9:13} == /data/audiocd ]]; then
 		discid=$( basename ${COVERFILE/.*} )
 		rm -f "$COVERFILE"
-		backupfile=$( ls -1 $diraudiocd/$discid.*.backup 2> /dev/null | head -1 )
+		backupfile=$( ls $diraudiocd/$discid.*.backup 2> /dev/null | head -1 )
 		if [[ $backupfile ]]; then
 			url=${backupfile/.backup}
 			mv -f $backupfile $url
@@ -361,11 +363,6 @@ coverfileslimit )
 			| xargs rm -f --
 	done
 	;;
-dabscan )
-	touch $dirshm/updatingdab
-	$dirbash/dab-scan.sh &> /dev/null &
-	pushData mpdupdate '{ "type": "dabradio" }'
-	;;
 dirdelete )
 	[[ ! $CONFIRM && $( ls "$DIR" ) ]] && echo -1 && exit
 # --------------------------------------------------------------------
@@ -413,16 +410,7 @@ equalizer )
 	done
 	;;
 equalizerget )
-	if [[ -e $dirsystem/equalizer.json ]]; then
-		cat $dirsystem/equalizer.json
-	else
-		echo '{
-  "active" : "Flat"
-, "preset" : {
-		"Flat": [ 62, 62, 62, 62, 62, 62, 62, 62, 62, 62 ]
-	}
-}'
-	fi
+	cat $dirsystem/equalizer.json
 	;;
 equalizerset ) # slide
 	sudo -u $USR amixer -MqD equal sset "$BAND" $VAL
@@ -452,7 +440,7 @@ librandom )
 	;;
 lsmnt )
 	for dir in NAS SD USB; do
-		lsdir=$( ls -1 /mnt/MPD/$dir 2> /dev/null )
+		lsdir=$( ls /mnt/MPD/$dir 2> /dev/null )
 		list=false
 		if [[ $lsdir ]]; then
 			mpdignore=/mnt/MPD/$dir/.mpdignore
@@ -490,9 +478,17 @@ lyrics )
 # --------------------------------------------------------------------
 			fi
 		fi
+		lyricsGet() {
+			query=$( alphaNumeric $artist )/$( alphaNumeric $TITLE )
+			curl -sL -A firefox $url/${query,,}.html | sed -n "/$start/,\|$end| p"
+		}
 		artist=$( sed -E 's/^A |^The |\///g' <<< $ARTIST )
-		query=$( alphaNumeric $artist )/$( alphaNumeric $TITLE )
-		lyrics=$( curl -sL -A firefox $url/${query,,}.html | sed -n "/$start/,\|$end| p" )
+		[[ ${#artist} == 2 ]] && short=1 && artist+=band
+		lyrics=$( lyricsGet )
+		if [[ ! $lyrics && $short ]]; then
+			artist=${artist/band}
+			lyrics=$( lyricsGet )
+		fi
 		[[ $lyrics ]] && sed -e 's/<br>//; s/&quot;/"/g' -e '/^</ d' <<< $lyrics | tee "$lyricsfile"
 	fi
 	;;
@@ -584,6 +580,9 @@ mpcplayback )
 			rm -f $dirshm/cdstart
 			$dirbash/status-push.sh
 		fi
+		if [[ -e $dirshm/relayson ]]; then
+			grep -q -m1 ^timeron=true $dirsystem/relays.conf && $dirbash/relays-timer.sh &> /dev/null &
+		fi
 	else
 		[[ -e $dirsystem/scrobble && $ACTION == stop ]] && mpcElapsed > $dirshm/elapsed
 		mpc -q $ACTION
@@ -600,15 +599,23 @@ mpcplayback )
 	fi
 	;;
 mpcremove )
-	if [[ $START ]]; then
-		count=$(( END - START + 1 ))
-		for (( i=0; i < $count; i++ )); do
-			mpc -q del $START
+	[[ ! $POS ]] && plClear && exit
+# --------------------------------------------------------------------
+	songpos=$( mpc status %songpos% )
+	pllength=$( mpc status %length% )
+	if [[ $TO ]]; then
+		if (( $songpos >= $POS && $songpos <= $TO )); then
+			[[ $pllength == $TO ]] && next=$(( POS -1 )) || next=$(( END + 1 ))
+			mpc -q play $next
+			mpc -q stop
+		fi
+		for (( i=$TO; i >= $POS; i-- )); do
+			mpc -q del $i
 		done
 		pushPlaylist
-	elif [[ $POS ]]; then
-		if [[ $( mpc status %songpos% ) == $POS ]]; then
-			[[ $( mpc status %length% ) == $POS ]] && next=$(( POS -1 )) || next=$POS
+	else
+		if [[ $songpos == $POS ]]; then
+			[[ $pllength == $POS ]] && next=$(( POS -1 )) || next=$POS
 		fi
 		mpc -q del $POS
 		if [[ $next ]]; then
@@ -616,8 +623,6 @@ mpcremove )
 			mpc -q stop
 		fi
 		pushPlaylist
-	else
-		plClear
 	fi
 	;;
 mpcseek )
@@ -752,7 +757,7 @@ playlistpush )
 	;;
 relaystimerreset )
 	$dirbash/relays-timer.sh &> /dev/null &
-	pushData relays '{ "done": 1 }'
+	pushData relays '{ "reset": '$( getVar timer $dirsystem/relays.conf )' }'
 	;;
 savedpldelete )
 	rm "$dirplaylists/$NAME.m3u"
@@ -807,6 +812,9 @@ shareddatampdupdate )
 	systemctl restart mpd
 	notify refresh-library 'Library Update' Done
 	$dirbash/status-push.sh
+	;;
+snapserverlist )
+	snapserverList
 	;;
 splashrotate )
 	splashRotate
@@ -863,7 +871,7 @@ webradioedit )
 		rm "$prevfile"
 		# stationcover
 		imgurl="$dirwebradio/img/$urlname"
-		img=$( ls -1 "$imgurl".* | head -1 )
+		img=$( ls "$imgurl".* | head -1 )
 		thumb="$imgurl-thumb.jpg"
 		if [[ $img || -e $thumb ]]; then
 			newimgurl="$dirwebradio/img/$newurlname"

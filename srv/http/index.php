@@ -26,10 +26,14 @@ function iconSet( $array, $class = '', $prefix = '' ) {
 }
 // context menus
 function menucommon( $add, $replace ) {
-	$htmlcommon = '<a data-cmd="'.$add.'" class="add sub">'.i( 'plus-o' ).'Add</a>'.i( 'play-plus submenu', '', $add.'play' );
-	$htmlcommon.= '<a data-cmd="playnext" class="playnext">'.i( 'add' ).'Play next</a>';
-	$htmlcommon.= '<a data-cmd="'.$replace.'" class="replace sub">'.i( 'replace' ).'Replace</a>'.i( 'play-replace submenu', '', $replace.'play' );
-	return $htmlcommon;
+	$list = [
+		  [ $add,       'plus-o',  'Add',     'play-plus',    $add.'play' ]
+		, [ 'playnext', 'add',     'Play next' ]
+		, [ $replace,   'replace', 'Replace', 'play-replace', $replace.'play' ]
+	];
+	$html = '';
+	foreach( $list as $l ) $html.= menuli( $l );
+	return $html;
 }
 function menudiv( $id, $html ) {
 	return '<div id="menu-'.$id.'" class="menu contextmenu hide">'.$html.'</div>';
@@ -38,8 +42,14 @@ function menuli( $list ) {
 	$command = $list[ 0 ];
 	$icon    = $list[ 1 ];
 	$label   = $list[ 2 ];
-	$icon    = i( $icon );
-	return '<a data-cmd="'.$command.'" class="'.$command.'">'.$icon.$label.'</a>';
+	if ( isset( $list[ 3 ] ) ) {
+		$sub     = ' sub';
+		$submenu = i( $list[ 3 ].' submenu', '', $list[ 4 ] );
+	} else {
+		$sub     = '';
+		$submenu = '';
+	}
+	return '<a data-cmd="'.$command.'" class="'.$command.$sub.'">'.i( $icon ).$label.'</a>'.$submenu;
 }
 $kid3       = file_exists( '/usr/bin/kid3-cli' );
 $menu       = '';
@@ -83,7 +93,7 @@ $menulist = [
 	, [ 'pause',      'pause',         'Pause' ]
 	, [ 'stop',       'stop',          'Stop' ]
 	, [ 'current',    'current',       'Current' ]
-	, [ 'remove',     'remove',        'Remove' ]
+	, [ 'remove',     'remove',        'Remove', 'track', 'removerange' ]
 	, [ 'wrsave',     'save',          'Save to Library' ]
 	, [ 'savedpladd', 'file-playlist', 'Add to a playlist' ]
 	, [ 'similar',    'lastfm',        'Add similar' ]
@@ -125,27 +135,29 @@ foreach( [ 'album', 'albumartist', 'artist', 'composer', 'conductor', 'genre', '
 }
 
 $menu     = '<div id="contextmenu">'.$menu.'</div>';
-$ids      = [ 'random',   'repeat',    'single',    'repeat1', 'consume', 'librandom', 'mute'
-			, 'btsender', 'libupdate', 'dabupdate', 'addons',  'relays',  'stoptimer' ];
+$ids      = [ 'random', 'repeat',   'single',    'repeat1', 'consume', 'librandom'
+			, 'mute',   'btsender', 'libupdate', 'addons',  'relays',  'stoptimer' ];
 $modeicon = '';
 foreach( $ids as $id ) $modeicon.= i( $id.' hide', 'mi-'.$id );
 if ( $localhost ) str_replace( 'library blink', 'refresh-library', $modeicon );
 $timeicon = str_replace( 'mi-', 'ti-', $modeicon );
 $dsp      = $equalizer ? 'equalizer' : 'camilladsp';
 $settinglist = [
-	  [ 'features',        'settings',     'features', 'Features', 'dsp',          'equalizer' ]
-	, [ 'player',          'settings',     'player',   'Player',   'logout',       'lock' ]
-	, [ 'networks',        'settings',     'networks', 'Networks', 'snapclient',   'snapclient' ]
-	, [ 'system',          'settings',     'raudio',   'System',   'relays',       'relays' ]
-	, [ 'addons',          'settings sub', 'jigsaw',   'Addons',   'guide',        'help' ]
-	, [ 'power',           '',             'power',    'Power',    'screenoff',    'screenoff' ]
-	, [ 'displaylibrary',  'sub',          'library',  'Library',  'update',       'refresh-library' ]
-	, [ 'displayplayback', 'sub',          'playback', 'Playback', 'displaycolor', 'color' ]
-	, [ 'displayplaylist', '',             'playlist', 'Playlist', 'multiraudio',  'multiraudio' ]
+	  [ 'features',        'settings',     'dsp' ]
+	, [ 'player',          'settings',     'lock' ]
+	, [ 'networks',        'settings',     'snapclient' ]
+	, [ 'system',          'settings',     'relays' ]
+	, [ 'addons',          'settings sub', 'help' ]
+	, [ 'power',           '',             'screenoff' ]
+	, [ 'displaylibrary',  'sub',          'refresh-library' ]
+	, [ 'displayplayback', 'sub',          'color' ]
+	, [ 'displayplaylist', '',             'multiraudio' ]
 ];
 $htmlsettings = '';
 foreach( $settinglist as $l ) {
-	$htmlsettings.= '<a id="'.$l[ 0 ].'" class="'.$l[ 1 ].'">'.i( $l[ 2 ] ).$l[ 3 ].'</a>'.i( $l[ 5 ].' submenu', $l[ 4 ] );
+	$icon  = str_replace( 'display', '', $l[ 0 ] );
+	$label = ucfirst( $icon );
+	$htmlsettings.= '<a id="'.$l[ 0 ].'" class="'.$l[ 1 ].'">'.i( $icon ).$label.'</a>'.i( $l[ 2 ].' submenu', $l[ 2 ] );
 }
 if ( file_exists( '/srv/http/data/system/vumeter' ) ) {
 	$htmlvumeter = '<div id="vu" class="hide">'.file_get_contents( '/srv/http/assets/img/vu.svg' ).'</div>';
@@ -168,7 +180,7 @@ $htmlsearch   = '
 <div id="refresh" class="page-icon"></div>
 
 <div id="bar-top" class="hide">
-	<?=i( 'raudio-nobg page-icon', 'logo' )
+	<?=i( 'raudio-nobg', 'logo' )
 	  .'<div id="playback-controls">'
 	  .iconSet( [ 'previous', 'stop', 'play', 'pause', 'next' ], 'btn btn-default btn-cmd' )
 	  .'</div>'.i( 'gear', 'button-settings' )?>
@@ -179,18 +191,16 @@ $htmlsearch   = '
 
 <div id="page-library" class="page hide">
 	<div class="content-top">
+		<i id="button-library" class="i-library page-icon"></i>
+		<span id="lib-home-title" class="title"></span>
+		<span id="lib-title"></span>
 		<?=iconSet( [
-			  i( 'library page-icon', 'button-library' )
-			, [ 'search',             'search' ]
-			, [ 'back',               'back' ]
-			, [ 'refresh-library',    'update' ]
+			  [ 'search',          'search' ]
+			, [ 'back',            'back' ]
+			, [ 'refresh-library', 'update' ]
 		], '', 'button-lib-' )
 		.$htmlsearch?>
-		<div id="lib-path">
-			<div id="lib-title"><span class="title">LIBRARY</span><span id="li-count"></span></div>
-			<div id="lib-breadcrumbs"></div>
-			<span class="lipath"></span>
-		</div>
+		<span class="lipath"></span>
 	</div>
 	<div id="lib-mode-list"></div>
 </div>
@@ -283,24 +293,24 @@ $htmlsearch   = '
 <div id="page-playlist" class="page hide">
 	<?=i( 'plus-o emptyadd hide' )?>
 	<div class="content-top">
-		<span id="pl-path"></span>
-		<span id="savedpl-path"></span>
+		<i id="button-playlist" class="i-playlist page-icon"></i>
+		<span id="pl-home-title" class="title"></span>
+		<span id="pl-title" class="title"></span>
 		<?=iconSet( [
-			  [ 'playlist page-icon', 'playlist' ]
-			, [ 'back',               'pl-back' ]
-			, [ 'search pllength',    'pl-search' ]
-		], '', 'button-' )?>
-		<div id="pl-manage" class="playlist">
-			<?=iconSet( [
-				  [ 'flash',                 'consume' ]
-				, [ 'librandom',             'librandom' ]
-				, [ 'shuffle pllength',      'shuffle' ]
-				, [ 'minus-circle pllength', 'clear' ]
-				, [ 'save-plus pllength',    'save' ]
-				, [ 'playlists',             'playlists' ]
-			], '', 'button-pl-' )?>
-		</div>
+			  [ 'back',            'back' ]
+			, [ 'search pllength', 'search' ]
+		], '', 'button-pl-' )?>
 		<?=str_replace( 'lib-', 'pl-', $htmlsearch )?>
+		<span id="pl-manage" class="playlist">
+			<?=iconSet( [
+				  [ 'flash',              'consume' ]
+				, [ 'librandom',          'librandom' ]
+				, [ 'shuffle pllength',   'shuffle' ]
+				, [ 'remove pllength',    'clear' ]
+				, [ 'save-plus pllength', 'save' ]
+				, [ 'playlists',          'playlists' ]
+			], '', 'button-pl-' )?>
+		</span>
 	</div>
 	<ul id="pl-list" class="list playlist"></ul>
 	<ul id="pl-savedlist" class="list"></ul>

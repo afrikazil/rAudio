@@ -1,9 +1,20 @@
 #!/bin/bash
 
+. /srv/http/bash/common.sh
+
+device=$( tty2std 'timeout 0.1 rtl_test -t' )
+if [[ $device == 'No supported devices '* ]]; then
+	notify dabradio 'DAB Radio' 'No supported devices.'
+	exit
+# --------------------------------------------------------------------
+fi
+
+systemctl start dab
+
 killsubs() {
 	kill $DABPID
 	kill $FFMPID
-	rm $MYPIPE /srv/http/data/shm/webradio/DAB*
+	rm $MYPIPE $dirshm/webradio/DAB*
 }
 trap killsubs SIGINT
 
@@ -15,7 +26,7 @@ pidof -q dab-rtlsdr-3 && sleep 4 # if another radio is playing, give time to sto
 dab-rtlsdr-3 \
 	-S $1 \
 	-C $2 \
-	-i /srv/http/data/shm/webradio \
+	-i $dirshm/webradio \
 	> $MYPIPE &
 DABPID=$!
 

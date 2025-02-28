@@ -5,7 +5,7 @@
 #listwlscan .i-lock { font-size: 16px; vertical-align: 1px }
 .menu {
 	position: absolute;
-	margin-left: 40px;
+	left: calc( 50% - 650px / 2 + 45px );
 	width: 150px;
 	padding: 0;
 	background: var( --cg );
@@ -71,7 +71,7 @@ ul {
 .section pre,
 pre.status {
 	margin-top: 0;
-	padding: 5px;
+	padding: 5px 5px 25px 5px;
 	width: 100%;
 	max-height: 75vh;
 	tab-size: 4;
@@ -89,6 +89,10 @@ pre.status {
 }
 div.helpblock {
 	margin-left: 0;
+}
+#divi2s,
+#divi2smodule {
+	height: 54px;
 }
 .helpblock {
 	display: block;
@@ -111,11 +115,13 @@ heading + .helpblock {
 .helpblock i.btn {
 	width: 22px;
 	line-height: 20px;
-	margin-left: 0;
-	margin-right: 0;
+	margin: 0 4px 0 0;
 	border: 1px solid var( --cga );
 	text-align: center;
 	border-radius: 2px;
+}
+.helpblock btn .btn {
+	border: none;
 }
 .helpblock p {
 	margin: 0 0 0 10px;
@@ -123,37 +129,41 @@ heading + .helpblock {
 .helpblock .img {
 	color: var( --cml );
 }
+.section c {
+	background-color: var( --cg );
+}
 .helpmenu {
 	display: inline-block;
-	width: 125px;
+	width: 126px;
 	height: 25px !important;
-	line-height: 26px;
+	line-height: 25px;
 	padding-left: 3px;
 	background: var( --cg );
 }
 .helpmenu.label {
 	width: fit-content;
-	padding: 0 5px 0 10px;
+	padding-left: 15px;
 	text-align: right;
 	background: var( --cga );
+}
+.helpmenu.label i {
+	margin: 0 8px;
+	width: fit-content !important;
 }
 .helpmenu.tab {
 	padding-left: 0;
 	text-align: center;
 }
-.helpblock .helpmenu.label,
-.helpblock .helpmenu.tab {
-	border-top: 1px solid #000;
-}
-#infoList .helpmenu.label {
+#infoBox .helpmenu.label {
 	background: var( --cgd );
+}
+#infoBox .helpmenu.label i:not( .submenu ) {
+	width: 24px;
+	line-height: 24px;
+	font-size: 20px;
 }
 #infoList p i {
 	width: 40px;
-}
-.helpmenu.label i {
-	margin: 0 0 0 8px;
-	text-align: left;
 }
 .helpmenu .sub {
 	float: right;
@@ -168,12 +178,17 @@ heading + .helpblock {
 .sub {
 	color: var( --cw );
 }
-btn {
+btn,
+tab {
 	display: inline-block;
 	line-height: 22px;
 	padding: 0 3px;
 	border: 1px solid var( --cg );
 	border-radius: 3px;
+}
+tab {
+	padding: 0 20px;
+	border-radius: 3px 3px 0 0;
 }
 .clear {
 	clear: both;
@@ -239,12 +254,6 @@ heading i {
 }
 heading i.back {
 	width: 40px;
-}
-heading .i-status {
-	display: none;
-}
-heading.status .i-status {
-	display: inline-block;
 }
 heading i.help {
 	float: right;
@@ -327,7 +336,8 @@ heading i.disabled {
 .entries li span,
 .entries .li1,
 .entries .li2,
-.select2-results__options li {
+.select2-results__options li,
+#divvolume .control {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -474,7 +484,7 @@ input.disabled + .switchlabel:after {
 	width: 40px !important;
 	margin-left: 5px;
 	font-size: 26px;
-	line-height: 40px;
+	line-height: 44px;
 	text-align: center;
 }
 .setting {
@@ -519,20 +529,10 @@ input.disabled + .switchlabel:after {
 	line-height: 26px;
 }
 .col-l i {
-	width: 30px;
+	margin-left: 8px;
 	vertical-align: 5px;
 	font-size: 22px;
 	line-height: 18px;
-}
-.settings i,
-.col-l i.status,
-.col-l a .i-status {
-	width: 20px;
-	vertical-align: 0;
-	text-align: center
-}
-.col-l .i-status {
-	font-size: 15px;
 }
 .col-l a {
 	display: inline-block;
@@ -573,8 +573,8 @@ input.disabled + .switchlabel:after {
 	display: none;
 	color: var( --cw );
 }
-.gpio svg {
-	max-width: 100%;
+.infomessage:has( svg ) {
+	width: 100%;
 }
 .gpiopins {
 	margin-top: 0;
@@ -621,6 +621,10 @@ input.disabled + .switchlabel:after {
 	display: none;
 	width: 40px !important;
 	line-height: 40px;
+}
+#divsoxr .helpblock span {
+	display: inline-block;
+	width: 112px;
 }
 
 @media (max-height: 730px) {
@@ -671,7 +675,8 @@ input.disabled + .switchlabel:after {
 }
 @media (max-width: 615px) {
 	#bar-bottom { padding: 0 }
-	#bar-bottom a { display: none }
+	#bar-bottom a,
+	#debug { display: none }
 }
 @media (max-width: 375px) {
 	.head .title { margin-left: 10px }

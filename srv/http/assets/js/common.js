@@ -96,6 +96,7 @@ function highlightJSON( json ) {
 					.reduce( ( r, k ) => ( r[ k ] = json[ k ], r ), {} ); // from: https://stackoverflow.com/a/29622653
 	var regex = /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)|[{}\[\]]/g;
 	return JSON.stringify( json, null, '\t' )
+				.replace( /\x3C/g, '&lt;' )                               // <
 				.replace( regex, function( match ) {                      // from: https://stackoverflow.com/a/7220510
 		if ( /^"/.test( match ) )
 			if ( /:$/.test( match ) )           return match                // key (wh)
@@ -207,7 +208,6 @@ function info( json ) {
 	V.timeout = {}
 	local(); // flag for consecutive info
 	I = json;
-	if ( 'keyvalue' in I ) $.each( I.keyvalue, ( k, v ) => I[ k ] = v );
 	if ( 'values' in I ) {
 		if ( ! Array.isArray( I.values ) ) {
 			if ( typeof I.values === 'object' ) { // json
@@ -264,12 +264,18 @@ function info( json ) {
 		} );
 	}
 	$( '#infoX, #infoCancel' ).on( 'click', function() {
-		infoButtonCommand( I.cancel, 'cancel' );
+		V.local = false;
+		delete I.oknoreset;
+		infoButtonCommand( I.cancel );
 	} );
 	$( '#infoOk' ).on( 'click', function() {
 		if ( V.press || $( this ).hasClass( 'disabled' ) ) return
 		
 		infoButtonCommand( I.ok );
+	} ).press( function() {
+		V.debug = true;
+		infoButtonCommand( I.ok );
+		V.debug = false;
 	} );
 	if ( I.file ) {
 		var htmlfile = '<div id="infoFilename"><c>(select file)</c></div>'
@@ -333,10 +339,6 @@ function info( json ) {
 			if ( ! $( this ).hasClass( 'active' ) ) I.tab[ $( this ).index() ]();
 		} );
 	}
-	if ( I.prompt ) {
-		I.oknoreset = true;
-		$( '#infoList' ).after( '<div class="infoprompt gr hide">'+ I.prompt +'</div>' );
-	}
 	var htmls = {};
 	[ 'header', 'message', 'footer' ].forEach( k => {
 		if ( I[ k ] ) {
@@ -364,7 +366,7 @@ function info( json ) {
 		I.checkboxonly = ! I.list.some( l => l[ 1 ] && l[ 1 ] !== 'checkbox' );
 		var colspan, kv, label, param, type;
 		var i          = 0; // for radio name
-		I.list.forEach( l => {
+		I.list.forEach( ( l, i ) => {
 			label   = l[ 0 ];
 			type    = l[ 1 ];
 			param   = l[ 2 ] || {};
@@ -448,7 +450,12 @@ function info( json ) {
 					if ( param.suffix ) {
 						htmls.list += '<td>&nbsp;<gr>'+ param.suffix +'</gr></td></tr>'; // default: false
 					} else {
-						htmls.list += param.sameline ? '</td>' : '</tr>';
+						if ( param.sameline ) {
+							var labelnext = I.list[ i + 1 ][ 0 ];
+							htmls.list += labelnext ? '<td style="padding: 0 5px; text-align: right;">'+ labelnext +'</td>' : '</td>';
+						} else {
+							htmls.list += '</tr>';
+						}
 					}
 					break;
 				case 'textarea':
@@ -459,7 +466,7 @@ function info( json ) {
 					htmls.list += param.sameline ? '</td>' : '</td></tr>';
 			}
 		} );
-		if ( type !== 'range' ) htmls.list = '<table>'+ htmls.list +'</table>';
+		htmls.list = '<table>'+ htmls.list +'</table>';
 	}
 	
 	// populate layout //////////////////////////////////////////////////////////////////////////////
@@ -490,7 +497,6 @@ function info( json ) {
 		} );
 		// show
 		infoToggle();
-		'focus' in I ? $inputbox.eq( I.focus ).select() : $( '#infoOverlay' ).trigger( 'focus' );
 		if ( $( '#infoBox' ).height() > window.innerHeight - 10 ) $( '#infoBox' ).css( { top: '5px', transform: 'translateY( 0 )' } );
 		infoWidth(); // text / password / textarea
 		if ( [ 'localhost', '127.0.0.1' ].includes( location.hostname ) ) $( '#infoList a' ).removeAttr( 'href' );
@@ -545,45 +551,86 @@ function info( json ) {
 			} );
 		}
 		if ( I.updn.length ) {
+			var max = [];
+			var min = [];
+			for ( i = 0; i < I.updn.length; i++ ) {
+				min.push( I.updn[ i ].min );
+				max.push( I.updn[ i ].max );
+			}
 			I.updn.forEach( ( el, i ) => {
 				var $td   = $( '#infoList .updn' ).parent().eq( i );
 				var $updn = $td.find( '.updn' );
 				var $num  = $td.prev().find( 'input' );
 				var step  = el.step;
-				var v     = 0;
-				function numberset( up ) {
-					v = +$num.val();
-					v = up ? v + step : v - step;
+				function numberset( $target ) {
+					var up = $target.hasClass( 'up' );
+					var v  = +$num.val();
+					v      = up ? v + step : v - step;
 					if ( v === el.min || v === el.max ) infoClearTimeout();
 					$num.val( v );
+					updnToggle( up );
+				}
+				function updnToggle( up ) {
+					var v = [];
+					$( '.updn' ).parents( 'tr' ).find( 'input' ).each( ( i, el ) => v.push( +$( el ).val() ) );
+					if ( el.link && typeof up === 'boolean' )  {
+						if ( v[ 0 ] > v[ 1 ] ) {
+							var vlink = up ? v[ 0 ] : v[ 1 ];
+							v         = [ vlink, vlink ];
+							$input.val( vlink );
+						}
+					}
 					if ( I.checkchanged ) $num.trigger( 'input' );
-					updnToggle( v );
+					for ( i = 0; i < I.updn.length; i++ ) {
+						$( '#infoList .dn' ).eq( i ).toggleClass( 'disabled', v[ i ] === min[ i ] );
+						$( '#infoList .up' ).eq( i ).toggleClass( 'disabled', v[ i ] === max[ i ] );
+					}
 				}
-				function updnToggle( v ) {
-					$updn.eq( 0 ).toggleClass( 'disabled', v === el.min );
-					$updn.eq( 1 ).toggleClass( 'disabled', v === el.max );
-				}
-				updnToggle( +$num.val() );
+				updnToggle();
 				$updn.on( 'click', function() {
-					if ( ! V.press ) numberset( $( this ).hasClass( 'up' ) );
+					if ( ! V.press ) numberset( $( this ) );
 				} ).press( function( e ) {
-					var up  = $( e.target ).hasClass( 'up' );
-					V.timeout.updni = setInterval( () => numberset( up ), 100 );
+					var $target = $( e.target );
+					V.timeout.updni = setInterval( () => numberset( $target ), 100 );
 					V.timeout.updnt = setTimeout( () => { // @5 after 3s
 						clearInterval( V.timeout.updni );
-						step    *= 5;
-						v = v > 0 ? v + ( step - v % step ) : v - ( step + v % step );
+						step           *= 5;
+						var v           = +$num.val();
+						v               = v > 0 ? v + ( step - v % step ) : v - ( step + v % step );
 						$num.val( v );
-						V.timeout.updni = setInterval( () => numberset( up ), 100 );
+						V.timeout.updni = setInterval( () => numberset( $target ), 100 );
 					}, 3000 );
 				} ).on( 'touchend mouseup keyup', function() {
 					infoClearTimeout();
 					step = el.step;
 				} );
+				if ( el.enable ) {
+					$input.on( 'blur', function() {
+						var $this = $( this );
+						var i     = $this.parents( 'tr' ).index();
+						var v     = { val: +$this.val(), min: min[ i ], max: max[ i ] }
+						if ( v.val < v.min ) {
+							$this.val( v.min );
+						} else if ( v.val > v.max ) {
+							$this.val( v.max );
+						}
+						updnToggle( i === 0 );
+					} );
+				}
 			} );
 		}
 		// custom function before show
 		if ( I.beforeshow ) I.beforeshow();
+		if ( 'focus' in I ) {
+			$inputbox.eq( I.focus ).focus();
+		} else {
+			var iL = $inputbox.length;
+			if ( iL === 1 || ( iL && ! $inputbox.eq( 0 ).val() ) ) {
+				$inputbox.eq( 0 ).focus();
+			} else {
+				$( '#infoOverlay' ).trigger( 'focus' );
+			}
+		}
 	} );
 	$( '#infoList .i-eye' ).on( 'click', function() {
 		var $this = $( this );
@@ -598,9 +645,8 @@ function info( json ) {
 	} );
 }
 
-function infoButtonCommand( fn, cancel ) {
+function infoButtonCommand( fn ) {
 	if ( typeof fn === 'function' ) fn();
-	if ( cancel ) delete I.oknoreset;
 	if ( V.local || V.press || I.oknoreset ) return // consecutive info / no reset
 	
 	infoReset();
@@ -661,8 +707,7 @@ function infoCheckSet() {
 }
 function infoCheckUnique() {
 	var infoval = infoVal( 'array' );
-	var vunique = [ ... new Set( infoval ) ];
-	I.notunique = infoval.length !== vunique.length;
+	I.notunique = infoval.length !== new Set( infoval ).size;
 }
 function infoClearTimeout( all ) { // ok for both timeout and interval
 	if ( ! ( 'timeout' in V ) ) return
@@ -791,7 +836,24 @@ function infoFileImageResize( ext, imgW, imgH ) {
 function infoKey2array( key ) {
 	if ( ! Array.isArray( I[ key ] ) ) I[ key ] = [ I[ key ] ];
 }
-function infoListChange() {
+function infoListAddRemove( callback ) {
+	$( '#infoList tr' ).append( '<td>'+ ico( 'remove edit' ) +'</td>' );
+	$( '#infoList td' ).eq( 2 ).html( ico( 'plus edit' ) );
+	$( '#infoList' ).on( 'click', '.edit', function() {
+		var $this = $( this );
+		var add   = $this.hasClass( 'i-plus' );
+		if ( add ) {
+			$( '#infoList select' ).select2( 'destroy' );
+			var $tr = $( '#infoList tr' ).last();
+			$tr.after( $tr.clone() );
+			selectSet();
+		} else {
+			$this.parents( 'tr' ).remove();
+		}
+		infoListChange( callback, add );
+	} );
+}
+function infoListChange( callback, add ) {
 	$input    = $( '#infoList' ).find( 'input, select' );
 	$inputbox = $( '#infoList input' );
 	if ( 'checkblank' in I ) {
@@ -800,11 +862,15 @@ function infoListChange() {
 	}
 	infoCheckSet();
 	$( '#infoList input' ).trigger( 'input' );
+	if ( callback ) callback( add );
 }
-function infoPrompt( message ) {
+function infoPrompt( message ) { // I.oknoreset - must be set if called after ok()
+	I.oknoreset = true;
+	if ( ! $( '.infoprompt' ).length ) $( '#infoList' ).after( '<div class="infoprompt gr hide">'+ I.prompt +'</div>' );
 	var $toggle = $( '#infoX, #infoTab, .infoheader, #infoList, .infofooter, .infoprompt' );
 	$( '.infoprompt' ).html( message );
 	$toggle.toggleClass( 'hide' );
+	bannerHide();
 	$( '#infoOverlay' )
 		.removeClass( 'hide' )
 		.trigger( 'focus' );
@@ -959,6 +1025,24 @@ function infoWidth() {
 }
 
 // common info functions --------------------------------------------------
+function infoDabScan() {
+	var icon  = 'dabradio';
+	var title = 'DAB Radio';
+	info( {
+		  icon    : icon
+		, title   : title
+		, message : 'Scan for available stations?'
+		, ok      : () => {
+			addonsProgressSubmit( {
+				  alias      : icon
+				, title      : title
+				, label      : 'Scan'
+				, installurl : 'dab-scan.sh'
+				, backhref   : page ? 'settings.php?p=features' : '/'
+			} );
+		}
+	} );
+}
 function infoPower() {
 	info( {
 		  icon        : 'power'
@@ -993,6 +1077,24 @@ function infoPowerCommand( action ) {
 	} );
 }
 
+function accent2plain( str ) {
+	return  str.normalize( 'NFD' ).replace( /[\u0300-\u036f]/g, '' )
+}
+function addonsProgressSubmit( input ) {
+	if ( input.installurl.slice( 0, 4 ) !== 'http' ) input.installurl = '/usr/bin/sudo /srv/http/bash/'+ input.installurl
+	var form  = '<form id="formtemp" action="settings.php?p=addonsprogress" method="post">';
+	$.each( input, ( k, v ) => form += '<input type="hidden" name="'+ [ k ] +'" value="'+ v +'">' );
+	$( 'body' ).append( form +'</form>' );
+	if ( V.debug ) {
+		var data = {};
+		$( 'form' ).last().serializeArray().forEach( el => data[ el.name ] = el.value );
+		console.log( data );
+		return
+	}
+	
+	loader();
+	$( '#formtemp' ).submit();
+}
 function capitalize( str ) {
 	return str.replace( /\b\w/g, l => l.toUpperCase() );
 }
@@ -1009,6 +1111,9 @@ function htmlOption( el ) {
 		$.each( el, ( k, v ) => options += '<option value="'+ v.toString().replace( /"/g, '&quot;' ) +'">'+ k +'</option>' );
 	}
 	return options
+}
+function ipSub( ip ) {
+	return ip.replace( /(.*\..*\..*\.).*/, '$1' )
 }
 function jsonChanged( a, b ) {
 	if ( ! a || ! b || ! Object.keys( a ).length || ! Object.keys( b ).length ) return true
@@ -1070,6 +1175,9 @@ function qrCode( msg ) {
 	} );
 	return qr.outerHTML
 }
+function sp( px ) {
+	return '<sp style="width: '+ px +'px"></sp>'
+}
 
 // select2 --------------------------------------------------------------------
 function selectSet( $select ) {
@@ -1122,91 +1230,92 @@ function selectText2Html( pattern ) {
 	} );
 }
 // push status
-function psNotify( data ) {
-	if ( data === false ) {
-		bannerHide();
-		return
-	}
-	
-	if ( V.relays ) {
-		if ( ! data.title ) $( '#bannerMessage' ).html( data.message );
-		return
-	}
-	
-	var icon    = data.icon;
-	var title   = data.title;
-	var message = data.message;
-	var delay   = data.delay;
-	if ( ! title ) {
-		V.relays    = true;
-		$( '#infoX' ).trigger( 'click' )
-	}
-	if ( ! page ) {
-		if ( message === 'Change track ...' ) { // audiocd
-			intervalClear();
-		} else if ( title === 'Latest' ) {
-			C.latest = 0;
-			$( '.mode.latest gr' ).empty();
-			if ( V.mode === 'latest' ) $( '#button-library' ).trigger( 'click' );
-		}
-	}
-	banner( icon, title, message, delay );
-}
-function psPower( data ) {
-	loader();
-	ws        = null;
-	V[ data.type ] = true;
-	banner( data.type +' blink', 'Power', V.off ? 'Off ...' : 'Reboot ...', -1 );
-	if ( V.off ) {
-		$( '#loader' ).css( 'background', '#000000' );
-		setTimeout( () => {
-			$( '#loader svg' ).css( 'animation', 'none' );
+var ps = {
+	  notify : data => {
+		if ( data === false ) {
 			bannerHide();
-		}, 10000 );
-	} else { // reconnect after reboot
-		setTimeout( websocketReconnect, data.startup + 5000 ); // add shutdown 5s
-	}
-}
-function psRelays( data ) {
-	var relaysToggle = function() {
+			return
+		}
+		
+		if ( V.relays ) {
+			if ( ! data.title ) $( '#bannerMessage' ).html( data.message );
+			return
+		}
+		
+		var icon    = data.icon;
+		var title   = data.title;
+		var message = data.message;
+		var delay   = data.delay;
+		if ( ! title ) {
+			V.relays    = true;
+			$( '#infoX' ).trigger( 'click' )
+		}
 		if ( ! page ) {
-			$( '#relays' ).toggleClass( 'on', S.relayson );
-			$( ( $time.is( ':visible' ) ? '#ti' : '#mi' ) +'-relays' ).toggleClass( 'hide', ! S.relayson  );
+			if ( message === 'Change track ...' ) { // audiocd
+				intervalClear();
+			} else if ( title === 'Latest' ) {
+				C.latest = 0;
+				$( '.mode.latest gr' ).empty();
+				if ( V.mode === 'latest' ) $( '#button-library' ).trigger( 'click' );
+			}
+		}
+		banner( icon, title, message, delay );
+	}
+	, power  : data => {
+		loader();
+		ws        = null;
+		V[ data.type ] = true;
+		banner( data.type +' blink', 'Power', V.off ? 'Off ...' : 'Reboot ...', -1 );
+		if ( V.off ) {
+			$( '#loader' ).css( 'background', '#000000' );
+			setTimeout( () => {
+				$( '#loader svg' ).css( 'animation', 'none' );
+				bannerHide();
+			}, 10000 );
+		} else { // reconnect after reboot
+			setTimeout( websocketReconnect, data.startup + 5000 ); // add shutdown 5s
 		}
 	}
-	if ( 'done' in data ) {
-		S.relayson = data.done;
-		V.relays   = false;
-		bannerHide();
-		relaysToggle();
-		return
-	}
-	
-	if ( ! ( 'timer' in data ) ) return
-	
-	info( {
-		  icon        : 'relays'
-		, title       : 'Equipments Off'
-		, message     : '<div class="msgrelays"><object type="image/svg+xml" data="/assets/img/stopwatch.svg"></object><a>60</a></div>'
-		, buttonlabel : ico( 'relays' ) +'Off'
-		, buttoncolor : red
-		, button      : () => bash( [ 'relays.sh', 'off' ] )
-		, oklabel     : ico( 'set0' ) +'Reset'
-		, ok          : () => {
-			bash( [ 'relaystimerreset' ] );
-			banner( 'relays', 'GPIO Relays', 'Reset idle timer to '+ data.timer +'m' );
-		}
-	} );
-	var delay    = 59;
-	var interval = setInterval( () => {
-		if ( delay ) {
-			$( '.infomessage a' ).text( delay-- );
-		} else {
-			clearInterval( interval );
+	, relays : data => {
+		if ( 'reset' in data ) {
 			$( '#infoX' ).trigger( 'click' );
-			relaysToggle();
+			banner( 'relays', 'GPIO Relays', 'Reset idle timer to '+ data.reset +'m' );
+			return
 		}
-	}, 1000 );
+		
+		var relaysToggle = function() {
+			clearInterval( V.intervalrelays );
+			bannerHide();
+			$( '#infoX' ).trigger( 'click' );
+			if ( ! page ) {
+				$( '#relays' ).toggleClass( 'on', S.relayson );
+				$( ( $time.is( ':visible' ) ? '#ti' : '#mi' ) +'-relays' ).toggleClass( 'hide', ! S.relayson  );
+			}
+		}
+		if ( 'done' in data ) {
+			S.relayson = data.done;
+			V.relays   = false;
+			relaysToggle();
+			return
+		}
+		
+		if ( ! ( 'countdown' in data ) ) return
+		
+		info( {
+			  icon        : 'relays'
+			, title       : 'Equipments Off'
+			, message     : '<div class="msgrelays"><object type="image/svg+xml" data="/assets/img/stopwatch.svg"></object><a>60</a></div>'
+			, buttonlabel : ico( 'relays' ) +'Off'
+			, buttoncolor : red
+			, button      : () => bash( [ 'relays.sh', 'off' ] )
+			, oklabel     : ico( 'set0' ) +'Reset'
+			, ok          : () => bash( [ 'cmd.sh', 'relaystimerreset' ] )
+		} );
+		var delay        = 59;
+		V.intervalrelays = setInterval( () => {
+			delay ? $( '.infomessage a' ).text( delay-- ) : relaysToggle();
+		}, 1000 );
+	}
 }
 
 // page visibility -----------------------------------------------------------------
@@ -1230,9 +1339,8 @@ function pageInactive() {
 	
 	V.pageactive = false;
 	if ( typeof onPageInactive === 'function' ) onPageInactive();
-	if ( typeof intervalStatus === 'function' ) intervalStatus( 'clear' );
 }
-document.onvisibilitychange = () => document.hidden ? pageInactive() : pageActive();
+document.onvisibilitychange = () => document.visibilityState === 'hidden' ? pageInactive() : pageActive();
 window.onblur     = pageInactive;
 window.onfocus    = pageActive;
 window.onpagehide = pageInactive;
@@ -1245,6 +1353,7 @@ function volumeMaxSet() {
 	}
 }
 function volumeMuteToggle() {
+	V.volumediff = Math.abs( S.volume - S.volumemute );
 	if ( S.volumemute ) {
 		S.volume     = S.volumemute;
 		S.volumemute = 0;
@@ -1254,10 +1363,9 @@ function volumeMuteToggle() {
 	}
 	volumeSet( S.volumemute ? 'mute' : 'unmute' );
 }
-function volumePush( type, val ) {
+function volumePush() {
 	V.local = true;
-	if ( typeof val === 'undefined' ) val = S.volume;
-	ws.send( '{ "channel": "volume", "data": { "type": "'+ ( type || '' ) +'", "val": '+ val +' } }' );
+	ws.send( '{ "channel": "volume", "data": { "type": "", "val": '+ S.volume +' } }' );
 }
 function volumeSet( type ) { // type: mute / unmute
 	V.local        = true;
@@ -1335,9 +1443,11 @@ Multiline arguments - no escape \" \` in js values > escape in php instead
 		- [ CMD, 'OFF' ] : disable
 */
 function bash( args, callback, json ) {
-	var args0  = args[ 0 ];
-	if ( [ '.sh', '.py' ].includes( args0.slice( -3 ) ) ) {
-		var filesh = args0;
+	if ( typeof args === 'string' ) {
+		var filesh = 'settings/'+ args
+		args       = '';
+	} else if ( [ '.sh', '.py' ].includes( args[ 0 ].slice( -3 ) ) ) {
+		var filesh = args[ 0 ];
 		args.shift();
 	} else {
 		var filesh = page ? 'settings/'+ page +'.sh': 'cmd.sh';
@@ -1360,12 +1470,7 @@ function bash( args, callback, json ) {
 		return
 	}
 	
-	$.post( 
-		 'cmd.php'
-		, data
-		, callback || null
-		, json || null
-	);
+	$.post( 'cmd.php', data, callback || null, json || null );
 }
 function bashConsoleLog( data ) {
 	console.log( '%cDebug:', "color:red" );
@@ -1418,16 +1523,6 @@ $( '#debug' ).press( function() {
 	} );
 } );
 $( '.page-icon' ).press( () => location.reload() );
-$( '.col-r .switch' ).press( function( e ) {
-	if ( $( '#setting-'+ e.target.id ).length && ! S[ e.target.id ] ) {
-		$( '#setting-'+ e.target.id ).trigger( 'click' );
-		return
-	}
-	
-	switchIdIconTitle( e.target.id );
-	notifyCommon( S[ SW.id ] ? 'Disable ...' : 'Enable ...' );
-	bash( S[ SW.id ] ? [ SW.id, 'OFF' ] : [ SW.id ] );
-} );
 $( '#data' ).on( 'click', '.copy', function() {
 	banner( 'copy', 'Error Data', 'Errors copied to clipboard.' );
 	// copy2clipboard - for non https which cannot use clipboard API

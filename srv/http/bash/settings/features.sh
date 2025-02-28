@@ -33,13 +33,6 @@ iwctlAP() {
 		systemctl stop iwd
 	fi
 }
-localbrowserDisable() {
-	ply-image /srv/http/assets/img/splash.png
-	systemctl disable --now bootsplash localbrowser
-	systemctl enable --now getty@tty1
-	sed -i -E 's/(console=).*/\1tty1/' /boot/cmdline.txt
-	[[ -e $dirshm/btreceiver ]] && systemctl start bluetoothbutton
-}
 localbrowserXset() {
 	local off
 	. $dirsystem/localbrowser.conf
@@ -94,35 +87,34 @@ brightness )
 	;;
 camilladsp )
 	enableFlagSet
-	$dirbash/cmd.sh playerstop
-	[[ ! $ON && -e /etc/default/camilladsp.backup ]] && mv -f /etc/default/camilladsp{.backup,}
 	pushRestartMpd camilladsp $TF
 	;;
-dabdevice )
-	if timeout 1 rtl_test -t &> /dev/null; then
-		echo true
-	else
-		systemctl disable --now mediamtx
-		echo false
-	fi
-	;;
 dabradio )
+	enableFlagSet
 	if [[ $ON ]]; then
-		if timeout 1 rtl_test -t &> /dev/null; then
-			systemctl enable --now mediamtx
-			[[ ! -e $dirmpdconf/ffmpeg.conf ]] && $dirsettings/player.sh ffmpeg
-		else
-			notify dabradio 'DAB Radio' 'No DAB devices found.' 5000
-		fi
-		
+		systemctl enable --now mediamtx
+		[[ ! -e $dirmpdconf/ffmpeg.conf ]] && $dirsettings/player.sh ffmpeg
 	else
 		killProcess dabscan
+		systemctl stop dab
 		systemctl disable --now mediamtx
 	fi
 	pushRefresh
 	;;
+dabscan )
+	$dirbash/dab-scan.sh &> /dev/null &
+	notify dabradio 'DAB Radio' 'Scan ...'
+	;;
 equalizer )
 	enableFlagSet
+	[[ $ON && ! -e $dirsystem/equalizer.json ]] && echo '{
+  "active" : "Flat"
+, "preset" : {
+		"Flat": [ 62, 62, 62, 62, 62, 62, 62, 62, 62, 62 ]
+	}
+, "current": "62 62 62 62 62 62 62 62 62 62"
+
+}' | jq > $dirsystem/equalizer.json
 	pushData reload 1
 	pushRestartMpd equalizer $TF
 	;;
@@ -190,22 +182,14 @@ localbrowser )
 			[[ $SCREENOFF == 0 ]] && tf=false || tf=true
 			pushSubmenu screenoff $tf
 		fi
-		if [[ $restart ]] || ! systemctl -q is-active localbrowser; then
-			restartlocalbrowser=1
-			systemctl restart bootsplash localbrowser &> /dev/null
-		fi
+		[[ $restart ]] && systemctl restart bootsplash localbrowser &> /dev/null
+		systemctl enable bootsplash localbrowser
 	else
-		localbrowserDisable
-	fi
-	if [[ $restartlocalbrowser ]]; then
-		sleep 2
-		if systemctl -q is-active localbrowser; then
-			systemctl enable bootsplash localbrowser
-			systemctl stop bluetoothbutton
-		else
-			! systemctl -q is-active localbrowser && notify firefox 'Browser on RPi' 'Start failed.' 5000
-			localbrowserDisable
-		fi
+		ply-image /srv/http/assets/img/splash.png
+		systemctl disable --now bootsplash localbrowser
+		systemctl enable --now getty@tty1
+		sed -i -E 's/(console=).*/\1tty1/' /boot/cmdline.txt
+		[[ -e $dirshm/btreceiver ]] && systemctl start bluetoothbutton
 	fi
 	pushRefresh
 	;;
@@ -221,14 +205,15 @@ login )
 	;;
 multiraudio )
 	enableFlagSet
-	ip=$( ipAddress )
-	iplist=$( jq -r .[]  $dirsystem/multiraudio.json | grep -v $ip )
 	display='{ "submenu": "multiraudio", "value": '$TF' }'
 	flagset='{ "filesh": [ "rm", "-f", "'$dirsystem'/multiraudio" ] }'
+	list=$( tr -d '\n' < $dirsystem/multiraudio.json )
 	if [[ $ON ]]; then
-		json='{ "json": '$( tr -d '\n' < $dirsystem/multiraudio.json )', "name": "multiraudio" }'
+		json='{ "json": '$list', "name": "multiraudio" }'
 		flagset=${flagset/rm*-f/touch}
 	fi
+	ip=$( ipAddress )
+	iplist=$( jq -r .[] <<< $list | grep -v $ip )
 	while read ip; do
 		! ipOnline $ip && continue
 		
@@ -239,11 +224,10 @@ multiraudio )
 	pushRefresh
 	pushSubmenu multiraudio $TF
 	;;
-multiraudiodisable )
-	rm -f $dirsystem/multiraudio
-	;;
 multiraudioreset )
 	rm -f $dirsystem/multiraudio*
+	pushRefresh
+	pushSubmenu multiraudio false
 	;;
 nfsserver )
 	mpc -q clear
@@ -254,7 +238,8 @@ nfsserver )
 		mv /mnt/MPD/{SD,USB} /mnt/MPD/NAS
 		sed -i 's|/mnt/MPD/USB|/mnt/MPD/NAS/USB|' /etc/udevil/udevil.conf
 		systemctl restart devmon@http
-		echo "/mnt/MPD/NAS  $( ipAddress sub )0/24(rw,sync,no_subtree_check)" > /etc/exports
+		ip=$( ipAddress )
+		echo "/mnt/MPD/NAS  ${ip%.*}.0/24(rw,sync,no_subtree_check)" > /etc/exports
 		systemctl enable --now nfs-server
 		mkdir -p $dirbackup $dirshareddata
 		ipAddress > $filesharedip
@@ -273,8 +258,8 @@ rescan
 
 CMD ACTION PATHMPD"
 		# prepend path
-		files=$( ls -1 $dirbookmarks/* )
-		files+=$'\n'$( ls -1 $dirplaylists/* )
+		files=$( ls $dirbookmarks/* )
+		files+=$'\n'$( ls $dirplaylists/* )
 		files=$( awk NF <<< $files )
 		if [[ $files ]]; then
 			while read file; do
@@ -318,21 +303,21 @@ scrobblekey )
 		--data "api_sig=$apisig" \
 		--data "format=json" \
 		http://ws.audioscrobbler.com/2.0 )
-	if [[ $response =~ error ]]; then
-		jq -r .message <<< $response
-	else
-		echo "\
+	[[ $response =~ error ]] && jq -r .message <<< $response && exit
+# --------------------------------------------------------------------
+	echo "\
 apikey=$apikey
 sharedsecret=$sharedsecret
 sk=$( jq -r .session.key <<< $response )
 " > $dirsystem/scrobblekey
-	fi
+	pushRefresh
 	;;
 scrobblekeyremove )
 	rm -f $dirsystem/{scrobble,scrobblekey}
 	pushRefresh
 	;;
-shairport-sync | spotifyd | upmpdcli )
+shairportsync | spotifyd | upmpdcli )
+	[[ $CMD == shairportsync ]] && CMD=shairport-sync
 	if [[ $ON ]]; then
 		serviceRestartEnable
 	else
@@ -387,9 +372,6 @@ snapserver )
 	$dirsettings/player-conf.sh
 	pushRefresh
 	;;
-snapserverip )
-	snapserverList | tail -1
-	;;
 spotifykey )
 	echo base64client=$BTOA > $dirsystem/spotifykey
 	;;
@@ -400,36 +382,21 @@ spotifykeyremove )
 	pushRefresh
 	;;
 spotifyoutput )
-	devices='"Default"'
-	lines=$( aplay -L | grep ^.*:CARD )
-	while read line; do
-		devices+=', "'$line'"'
-	done <<< $lines
-	current=$( sed -E -n '/^device/ {s/.*"(.*)"/\1/; p}' /etc/spotifyd.conf )
-	if [[ ${current:0:3} == hw: ]]; then
-		current=Default
-	else
-		current=$( getContent $dirsystem/spotifyoutput )
-	fi
-	echo '{
-  "current" : "'$current'"
-, "devices" : [ '$devices' ]
-}'
-	;;
-spotifyoutputset )
 	file=$dirsystem/spotifyoutput
 	[[ $OUTPUT == Default ]] && rm -f "$file" || echo $OUTPUT > "$file"
+	sed -i -E 's/(volume_controller = ).*/\1"'$VOLUME'"/' /etc/spotifyd.conf
+	touch $dirshm/spotifydrestart
 	$dirsettings/player-conf.sh
+	pushRefresh
 	;;
 spotifytoken )
 	. $dirsystem/spotifykey
-	spotifyredirect=$( grep '^var redirect_uri' /srv/http/assets/js/features.js | cut -d"'" -f2 )
 	tokens=$( curl -X POST https://accounts.spotify.com/api/token \
 				-H "Authorization: Basic $base64client" \
 				-H 'Content-Type: application/x-www-form-urlencoded' \
 				-d "code=$CODE" \
 				-d grant_type=authorization_code \
-				--data-urlencode "redirect_uri=$spotifyredirect" )
+				--data-urlencode "redirect_uri=$REDIRECT" )
 	if grep -q -m1 error <<< $tokens; then
 		notify 'spotify blink' 'Spotify' "Error: $( jq -r .error <<< $tokens )"
 		exit
@@ -450,9 +417,7 @@ stoptimer )
 	else
 		rm -f $dirshm/pidstoptimer
 		if [[ -e $dirshm/relayson ]]; then
-			. $dirsystem/relays.conf
-			echo $timer > $timerfile
-			$dirbash/relays-timer.sh &> /dev/null &
+			grep -q timeron=true $dirsystem/relays.conf && $dirbash/relays-timer.sh &> /dev/null &
 		fi
 	fi
 	pushRefresh

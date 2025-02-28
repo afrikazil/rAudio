@@ -202,17 +202,18 @@ i.map.disabled, .map.disabled i {
 #menu-file {
 	right: 50px;
 }
+.biosimilar p,
+.bklabel,
 .coverart1,
 .coverart2,
 .label,
 .liinfo div,
-.biosimilar p,
-.bklabel,
+.list li *,
 .scrollellipse,
 .tagmessage div,
-#divlyricstitle,
-#lib-breadcrumbs,
-.list li * {
+#lib-title,
+#lyricsartist,
+#lyricstitle {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -223,6 +224,12 @@ i.map.disabled, .map.disabled i {
 #settings {
 	-webkit-user-select: none;
 	user-select: none;
+}
+#bar-top.disabled,
+#bar-bottom.disabled,
+.content-top.disabled,
+#page-playlist .index {
+	opacity: 0.5;
 }
 /* ---------------------- bars ----------------------*/
 #refresh {
@@ -993,8 +1000,9 @@ i.map.disabled, .map.disabled i {
 	top: 0;
 	width: 100%;
 	margin-bottom: 10px;
+	padding: 10px 0;
 	font-size: 30px;
-	line-height: 50px;
+	line-height: 30px;
 	background: #000000;
 	border-bottom: 1px solid var( --cg );
 }
@@ -1013,6 +1021,9 @@ i.map.disabled, .map.disabled i {
 	font-size: 24px;
 	text-align: center;
 	color: var( --cm ) !important;
+}
+#biocontent .close-root {
+	margin-top: -5px;
 }
 #biocontent .bioback {
 	margin-top: -10px;
@@ -1089,19 +1100,20 @@ i.map.disabled, .map.disabled i {
 	display: inline-block;
 	height: 40px;
 }
-#lyricstitle {
+#lyricstitle,
+#lyricsartist {
 	display: inline-block;
-	margin-left: 10px;
 	width: calc( 100% - 84px );
-	vertical-align: 10px;
+}
+#lyricstitle {
+	margin-left: 10px;
+	line-height: 40px;
 	font-size: 26px;
 	font-weight: 300;
 }
 #lyricsartist {
-	display: inline-block;
-	max-width: calc( 100% - 40px );
 	padding-left: 15px;
-	line-height: 40px;
+	line-height: 42px;
 	font-size: 18px;
 	font-weight: 300;
 }
@@ -1342,9 +1354,21 @@ i.map.disabled, .map.disabled i {
 	top: 40px;
 	padding-right: 10px;
 }
+.content-top .title {
+	display: inline-block;
+	margin-left: 15px;
+	height: 40px;
+	line-height: 40px;
+	font-size: 26px;
+	letter-spacing: 5px;
+	color: var( --cw );
+}
+.title.name,
+#pl-title {
+	margin-left: 0;
+}
 .content-top a {
 	font-size: 18px;
-	color: var( --cw );
 }
 .button-webradio-new {
 	margin-left: 10px;
@@ -1366,33 +1390,22 @@ i.map.disabled, .map.disabled i {
 	float: left !important;
 	margin-left: 5px;
 }
-#lib-path {
-	height: 40px;
-	line-height: 40px;
-	font-size: 18px;
-}
 #countsong,
 #countradio {
 	margin-left: 10px;
 }
-.content-top .title {
-	display: inline-block;
-	margin: 0 0 0 15px;
-	font-size: 26px;
-	letter-spacing: 5px;
-	color: var( --cw ) !important;
-}
 .lialbum,
 #button-pl-back,
-#lib-breadcrumbs a {
+#lib-title a {
 	color: var( --cml );
 }
-#lib-breadcrumbs a:last-of-type {
+#lib-title a:last-of-type {
 	color: var( --cw );
 }
 .button-coverart {
 	position:relative;
 	display: inline-block;
+	line-height: 40px;
 	margin-left: 15px;
 }
 #infoIcon .button-coverart {
@@ -1401,7 +1414,6 @@ i.map.disabled, .map.disabled i {
 .button-coverart::before,
 .button-coverart::after {
 	position: relative;
-	margin-left: 4px;
 	content: '\F596';
 	font-family: rern;
 	font-size: 26px;
@@ -1420,8 +1432,7 @@ i.map.disabled, .map.disabled i {
 	height: 30px;
 	border: 1px solid hsl(0,0%,30%);
 }
-#mode-title,
-.pl-title {
+#mode-title {
 	font-size: 24px !important;
 	font-weight: 300;
 	color: var( --cw );
@@ -1429,7 +1440,7 @@ i.map.disabled, .map.disabled i {
 .spaced {
 	letter-spacing: 4px;
 }
-.pl-title.name {
+.title.name {
 	letter-spacing: normal;
 }
 #button-pl-back {
@@ -1480,10 +1491,6 @@ i.map.disabled, .map.disabled i {
 	font-size: 26px;
 	text-align: center;
 	color: var( --cm );
-}
-#lib-path span i {
-	top: 3px;
-	left: -3px;
 }
 .index {
 	position: fixed;
@@ -1608,19 +1615,17 @@ i.map.disabled, .map.disabled i {
 	float: right;
 	font-size: 0;
 }
-#li-count {
-	margin-left: 20px;
-	font-weight: 300;
-	color: var( --cw );
+.title a {
+	font-size: 18px;
+	letter-spacing: normal;
 }
-#li-count i {
+.title i {
 	color: var( --cg60 );
+	letter-spacing: normal;
 }
 #pl-count,
 #pl-path {
 	display: inline-block;
-	height: 40px;
-	line-height: 40px;
 	font-size: 18px;
 	color: var( --cg60 );
 }
@@ -1957,8 +1962,6 @@ li.active .li2 bl {
 	#bio .container { padding : 0 10px }
 	#pl-count,
 	#pl-path,
-	.pl-title { display: none }
-	.pl-title.name { display: inline }
 	#pl-savedlist-count { margin-left: -20px }
 }
 /************************************************************************************/

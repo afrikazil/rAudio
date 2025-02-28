@@ -1,4 +1,13 @@
 {
-  "playlists" : 0
-, "webradio"  : 4
+  "album": 76,
+  "albumartist": 45,
+  "artist": 90,
+  "composer": 3,
+  "conductor": 0,
+  "date": 35,
+  "genre": 22,
+  "latest": 0,
+  "playlists": 0,
+  "song": 882,
+  "webradio": 4
 }

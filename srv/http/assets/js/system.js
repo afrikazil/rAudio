@@ -1,212 +1,994 @@
-var default_v     = {
-	  bluetooth     : {
-		  DISCOVERABLE : true
-		, FORMAT       : false 
+var config        = {
+	  _disable      : {
+		  shareddata : () => {
+			info( {
+				  ...SW
+				, message : 'Disable and restore local data?'
+				, cancel  : switchCancel
+				, okcolor : orange
+				, ok      : () => {
+					notifyCommon( 'Disable ...' );
+					bash( [ 'shareddatadisable', 'OFF' ] );
+				}
+			} );
+		}
 	}
-	, lcdchar_gpio  : {
-		  INF       :'gpio'
-		, COLS      : 20
-		, CHARMAP   : 'A00'
-		, PIN_RS    : 15
-		, PIN_RW    : 18
-		, PIN_E     : 16
-		, P0        : 21
-		, P1        : 22
-		, P2        : 23
-		, P3        : 24
-		, BACKLIGHT : false
+	, _prompt       : {
+		  backup  : () => {
+			var d     = new Date();
+			var month = '0'+ ( d.getMonth() + 1 );
+			var date  = '0'+ d.getDate();
+			var ymd   = d.getFullYear() + month.slice( -2 ) + date.slice( -2 );
+			info( {
+				  ...SW
+				, message : 'Save all data and settings'
+				, list    : [ 'Filename', 'text', { suffix: '.gz' } ]
+				, values  : 'rAudio_backup-'+ ymd
+				, ok      : () => {
+					notifyCommon( 'Process ...' );
+					bash( 'system-databackup.sh', data => {
+						if ( data == 1 ) {
+							notifyCommon( 'Download ...' );
+							fetch( '/data/shm/backup.gz' )
+								.then( response => response.blob() )
+								.then( blob => {
+									var url = window.URL.createObjectURL( blob );
+									var a = document.createElement( 'a' );
+									a.style.display = 'none';
+									a.href = url;
+									a.download = infoVal() +'.gz';
+									document.body.appendChild( a );
+									a.click();
+									setTimeout( () => {
+										a.remove();
+										window.URL.revokeObjectURL( url );
+										bannerHide();
+									}, 1000 );
+								} ).catch( () => {
+									infoWarning( SW.icon, SW.title, 'File download failed.' )
+									bannerHide();
+								} );
+						} else {
+							info( {
+								  ...SW
+								, message : 'Backup failed.'
+							} );
+							bannerHide();
+						}
+					} );
+				}
+			} );
+		}
+		, i2s     : () => util.i2sSelect.option()
+		, restore : () => {
+			info( {
+				  ...SW
+				, tablabel : [ 'From Backup', 'Reset To Default' ]
+				, tab      : [ '', util.restoreReset ]
+				, list     : [ 'Library database only', 'checkbox' ]
+				, file     : { oklabel: ico( 'restore' ) +'Restore', type : '.gz' }
+				, oklabel  : ico( 'restore' ) +'Restore'
+				, okcolor  : orange
+				, ok       : () => {
+					notifyCommon( 'Restore ...' );
+					var formdata = new FormData();
+					formdata.append( 'cmd', 'datarestore' );
+					formdata.append( 'file', I.infofile );
+					formdata.append( 'libraryonly', infoVal() );
+					fetch( 'cmd.php', { method: 'POST', body: formdata } )
+						.then( response => response.text() )
+						.then( message => {
+							loaderHide();
+							if ( message ) {
+								bannerHide();
+								infoWarning(  SW.icon,  SW.title, message );
+							}
+						} );
+					loader();
+				}
+			} );
+		}
+		, shareddata    : () => util.mount.mount()
 	}
-	, lcdchar_i2c   : {
-		  INF       :'i2c'
-		, COLS      : 20
-		, CHARMAP   : 'A00'
-		, ADDRESS   : 39
-		, CHIP      : 'PCF8574'
-		, BACKLIGHT : false
+	, bluetooth     : values => {
+		info( {
+			  ...SW
+			, list         : [
+				  [ 'Discoverable <gr>by senders</gr>',             'checkbox' ]
+				, [ 'Sampling 16bit 44.1kHz <gr>to receivers</gr>', 'checkbox' ]
+			]
+			, values       : values
+			, checkchanged : S.bluetooth
+			, cancel       : switchCancel
+			, ok           : switchEnable
+		} );
 	}
-	, mountcifs     : {
-		  PROTOCOL : 'cifs'
-		, NAME     : ''
-		, IP       : ''
-		, SHARE    : ''
-		, USR      : ''
-		, PASSWORD : ''
-		, OPTIONS  : '' 
+	, i2smodule     : () => {
+		if ( S.audioaplayname === 'cirrus-wm5102' ) {
+			util.wm5102();
+		} else {
+			infoSetting( 'i2smodule', values => {
+				info( {
+					  ...SW
+					, list         : [ 'Disable I²S HAT EEPROM read', 'checkbox' ]
+					, values       : values
+					, checkchanged : true
+					, ok           : () => bash( [ 'i2seeprom', infoVal() ] )
+				} );
+			} );
+		}
 	}
-	, mountnfs      : {
-		  PROTOCOL : 'nfs'
-		, NAME     : ''
-		, IP       : ''
-		, SHARE    : ''
-		, OPTIONS  : ''
+	, lcdchar       : data => {
+		'address' in data ? util.lcdchar.i2s( data ) : util.lcdchar.gpio( data );
+	}
+	, mpdoled       : data => {
+		var values     = data.values;
+		var buttonlogo = S.mpdoled && ! data.reboot;
+		var chip       = {
+			  'SSD130x SP'  : 1
+			, 'SSD130x I²C' : 3
+			, 'Seeed I²C'   : 4
+			, 'SH1106 I²C'  : 6
+			, 'SH1106 SPI'  : 7
+		}
+		info( {
+			  ...SW
+			, list         : [
+				  [ 'Controller',              'select', chip ]
+				, [ 'Refresh <gr>(baud)</gr>', 'select', { kv: { '800,000': 800000, '1,000,000': 1000000, '1,200,000': 1200000 } } ]
+			]
+			, footer       : ico( 'raudio' ) +'Logo'
+			, values       : values
+			, checkchanged : S.mpdoled
+			, boxwidth     : 140
+			, beforeshow   : () => {
+				var $tr   = $( '#infoList tr' );
+				var $baud = $tr.eq( 1 )
+				$baud.toggleClass( 'hide', S.mpdoled && ( values.CHIP < 3 || values.CHIP > 6 ) );
+				$( '.infofooter i' ).toggleClass( 'disabled', ! S.mpdoled || data.reboot )
+				$tr.eq( 0 ).on( 'input', function() {
+					var val = this.value;
+					$baud.toggleClass( 'hide', val < 3 || val > 6 );
+				} );
+			}
+			, cancel       : switchCancel
+			, ok           : switchEnable
+		} );
+	}
+	, powerbutton   : values => {
+		values === true ? util.powerbutton.ap() : util.powerbutton.sw( values );
+	}
+	, relays        : data => {
+		S.relays ? util.relays.order( data ) : util.relays.name( data );
+	}
+	, rotaryencoder : values => {
+		info( {
+			  ...SW
+			, message      : util.gpiosvg
+			, list         : [
+				  [ 'CLK',  'select', util.board2bcm ]
+				, [ 'DT',   'select', util.board2bcm ]
+				, [ 'SW',   'select', util.board2bcm ]
+				, [ 'Step', 'radio',  { '1%': 1, '2%': 2 } ]
+			]
+			, boxwidth     : 70
+			, values       : values
+			, checkchanged : S.rotaryencoder
+			, cancel       : switchCancel
+			, ok           : switchEnable
+			, fileconf     : true
+		} );
+	}
+	, soundprofile  : values => {
+		info( {
+			  ...SW
+			, list         : [ 
+				  [ 'Swappiness',            'number' ]
+				, [ 'Max Transmission Unit', 'number', { suffix: 'byte' } ]
+				, [ 'Transmit Queue Length', 'number' ]
+			]
+			, boxwidth     : 70
+			, values       : values
+			, checkchanged : true
+			, checkblank   : true
+			, cancel       : switchCancel
+			, ok           : switchEnable
+			, fileconf     : true
+		} );
+	}
+	, timezone      : () => util.server.ntp()
+	, tft           : data => {
+		var type = {
+			  'Generic'               : 'tft35a'
+			, 'Waveshare (A)'         : 'waveshare35a'
+			, 'Waveshare (B)'         : 'waveshare35b'
+			, 'Waveshare (B) Rev 2.0' : 'waveshare35b-v2'
+			, 'Waveshare (C)'         : 'waveshare35c'
+		}
+		var buttoncalibrate = S.tft && ! data.reboot;
+		info( {
+			  ...SW
+			, list         : [ 'Type', 'select', type ]
+			, values       : data.values
+			, checkchanged : S.tft
+			, boxwidth     : 190
+			, buttonlabel  : ! buttoncalibrate ? '' : 'Calibrate'
+			, button       : ! buttoncalibrate ? '' : () => {
+				info( {
+					  ...SW
+					, message : 'Calibrate touchscreen?'
+								+'<br>(Get stylus ready.)'
+					, ok      : () => {
+						notify( SW.icon, 'Calibrate Touchscreen', 'Start ...' );
+						bash( [ 'tftcalibrate' ] );
+					}
+				} );
+			}
+			, cancel       : switchCancel
+			, ok           : switchEnable
+		} );
+	}
+	, vuled         : values => {
+		var list   = [ [ ico( 'vuled gr' ) +'LED', '', { suffix: ico( 'gpiopins gr' ) +'Pin' } ] ];
+		var leds   = Object.keys( values ).length + 1;
+		for ( i = 1; i < leds; i++ ) list.push(  [ ico( 'power' ) +'&emsp;'+ i, 'select', util.board2bcm ] );
+		info( {
+			  ...SW
+			, message      : util.gpiosvg
+			, list         : list
+			, values       : values
+			, checkchanged : S.vuled
+			, boxwidth     : 70
+			, beforeshow   : () => {
+				infoListAddRemove( () => {
+					$( '#infoList tr' ).slice( 1 ).each( ( i, el ) => {
+						$( el ).find( 'td' ).eq( 0 ).html( ico( 'power' ) +'&emsp;'+ ( i + 1 ) );
+						$( '#infoList .i-remove' ).toggleClass( 'disabled', $( '#infoList select' ).length < 2 );
+					} );
+				} );
+				util.relays.toggle();
+			}
+			, cancel       : switchCancel
+			, ok           : switchEnable
+			, fileconf     : true
+		} );
+	}
+	, wlan          : data => {
+		var accesspoint = 'Auto start Access Point<br>'+ sp( 30 ) +'<gr>(if not connected)</gr>';
+		info( {
+			  ...SW
+			, list         : [
+				  [ 'Country',   'select', data.list ]
+				, [ accesspoint, 'checkbox' ]
+			]
+			, boxwidth     : 250
+			, values       : data.values
+			, checkchanged : S.wlan
+			, beforeshow   : () => selectText2Html( { '00': '00 <gr>(allowed worldwide)</gr>' } )
+			, cancel       : switchCancel
+			, ok           : switchEnable
+		} );
+	}
+}
+var util          = {
+	  board2bcm     : {
+		   3:2,   5:3,   7:4,   8:14, 10:15, 11:17, 12:18, 13:27, 15:22, 16:23, 18:24, 19:10, 21:9
+		, 22:25, 23:11, 24:8,  26:7,  29:5,  31:6,  32:12, 33:13, 35:19, 36:16, 37:26, 38:20, 40:21
+	}
+	, gpiosvg       : $( '#gpiosvg' ).html()
+	, hostname      : () => {
+		SW = {
+			  id    : 'hostname'
+			, icon  : 'hostname'
+			, title : 'Player Name'
+		}
+		info( {
+			  ...SW
+			, list         : [ 'Name', 'text' ]
+			, values       : { NAME: S.hostname }
+			, checkblank   : true
+			, checkchanged : true
+			, beforeshow   : () => {
+				$( '#infoList input' ).on( 'input', function() {
+					$( this ).val( $( this ).val().replace( /[^a-zA-Z0-9-]+/g, '' ) );
+				} );
+			}
+			, ok           : () => {
+				switchEnable();
+				$( '#hostname' ).addClass( 'disabled' );
+			}
+		} );
+	}
+	, i2sSelect     : {
+		  hide   : () => {
+			$( '#i2s' ).prop( 'checked', false );
+			$( '#divi2s' ).removeClass( 'hide' );
+			$( '#divi2smodule' ).addClass( 'hide' );
+		  }
+		, option : () => {
+			if ( $( '#i2smodule option' ).length > 2 ) {
+				if ( $( '#divi2smodule' ).hasClass( 'hide' ) ) {
+					util.i2sSelect.show();
+					$( '#i2smodule' ).select2( 'open' );
+				}
+			} else {
+				$( '#i2smodule' ).select2( 'close' );
+				infoSetting( 'i2slist', list => {
+					list[ '(None / Auto detect)' ] = '';
+					$( '#i2smodule' ).html( htmlOption( list ) );
+					util.i2sSelect.select();
+					util.i2sSelect.show();
+					$( '#i2smodule' ).select2( 'open' );
+				} );
+			}
+		}
+		, select : () => {
+			$( '#i2smodule option' ).filter( ( i, el ) => { // for 1 value : multiple names
+				var $this = $( el );
+				return $this.text() === S.audiooutput && $this.val() === S.audioaplayname;
+			} ).prop( 'selected', true );
+		}
+		, show   : () => {
+			$( '#divi2s' ).addClass( 'hide' );
+			$( '#divi2smodule' ).removeClass( 'hide' );
+			$( '#setting-i2smodule' ).toggleClass( 'hide', ! S.i2smodule );
+		}
+	}
+	, lcdchar       : {
+		  gpio : values => {
+			var list0 = jsonClone( util.lcdchar.list );
+			var list  = list0.slice( 0, 3 );
+			[ 'Pins: &emsp; D4', 'RS', 'D5', 'RW', 'D6', 'E', 'D7' ].forEach( ( k, i ) => {
+				list.push( [ k, 'select', { kv: util.board2bcm, sameline: i % 2 === 0 } ] );
+			} );
+			list.push( [ '', '' ], list0.slice( -1 )[ 0 ] );
+			info( {
+				  ...util.lcdchar.json
+				, tab          : [ () => infoSetting( 'lcdchar', util.lcdchar.i2s ), '' ]
+				, message      : util.gpiosvg
+				, list         : list
+				, boxwidth     : 70
+				, values       : values
+				, checkchanged : S.lcdchar
+			} );
+		}
+		, i2s  : data => {
+			var list          = jsonClone( util.lcdchar.list );
+			list[ 3 ][ 2 ].kv = data.address;
+			info( {
+				  ...util.lcdchar.json
+				, tab          : [ '', () => infoSetting( 'lcdchar gpio', util.lcdchar.gpio ) ]
+				, list         : list
+				, boxwidth     : 180
+				, values       : data.values
+				, checkchanged : S.lcdchar
+			} );
+		}
+		, json : {
+			  icon       : 'lcdchar'
+			, title      : 'Character LCD'
+			, tablabel   : [ 'I&#178;C', 'GPIO' ]
+			, footer     : ico( 'raudio' ) +'Logo&emsp;'+ ico( 'screenoff' ) +'Sleep'
+			, beforeshow : () => {
+				$( '#infoList label' ).parents( 'td' ).prop( 'colspan', 3 );
+				$( '.infofooter i' )
+					.toggleClass( 'disabled', ! S.lcdchar || data.reboot )
+					.on( 'click', function() {
+						bash( [ 'lcdcharset', $( this ).index() ? 'off' : 'logo', 'CMD ACTION' ] );
+				} );
+			}
+			, cancel     : switchCancel
+			, ok         : switchEnable
+			, fileconf   : true
+		}
+		, list : [
+			  [ 'Type',                 'hidden'  ]
+			, [ 'Size',                 'radio',    { kv: { '20 x 4': 20, '16 x 2': 16 } } ]
+			, [ 'Character Map',        'radio',    { kv: [ 'A00', 'A02' ] } ]
+			, [ 'Address',              'radio',    [ '' ] ] /*'by confget'*/
+			, [ 'Chip',                 'select',   [ 'PCF8574', 'MCP23008', 'MCP23017' ] ]
+			, [ 'Idle sleep <gr>(60s)', 'checkbox' ]
+		]
+	}
+	, ledcalc       : () => {
+		info( {
+			  icon       : 'vuled'
+			, title      : 'LED Resister Calculator'
+			, list       : [
+				  [ 'GPIO <gr>(V)</gr>',                'number' ]
+				, [ 'Current <gr>(mA)</gr>',            'number' ]
+				, [ 'LED forward voltage <gr>(V)</gr>', 'number' ]
+				, [ 'Resister <gr>(&#8486;)</gr>',      'number' ]
+			]
+			, boxwidth   : 70
+			, values     : [ 3.3, 5 ]
+			, focus      : 2
+			, beforeshow : () => {
+				$( '#infoList input' ).prop( 'disabled', 1 );
+				$( '#infoList input' ).eq( 2 )
+					.prop( 'disabled', 0 )
+					.on( 'input', function() {
+						var fv = $( this ).val();
+						if ( fv > 3.3 ) {
+							var ohm = '( > 3.3V)';
+						} else {
+							var ohm = fv ? Math.round( ( 3.3 - fv ) / 0.005 ) : '';
+						}
+						$( '#infoList input' ).eq( 3 ).val( ohm );
+					} );
+			}
+			, okno       : true
+		} );
+	}
+	, mount         : {
+		  mount   : nfs => {
+			var nfs        = nfs || false;
+			var shareddata = SW.id === 'shareddata';
+			var conf       = {
+				  cifs : {
+					  PROTOCOL : 'cifs'
+					, NAME     : ''
+					, IP       : ipSub( S.ip )
+					, SHARE    : ''
+					, USR      : ''
+					, PASSWORD : ''
+					, OPTIONS  : '' 
+				}
+				, nfs  : {
+					  PROTOCOL : 'nfs'
+					, NAME     : ''
+					, IP       : ipSub( S.ip )
+					, SHARE    : ''
+					, OPTIONS  : ''
+				}
+			}
+			var values     = nfs ? conf.nfs : conf.cifs;
+			var tab = nfs ? [ util.mount.mount, '' ] : [ '', () => util.mount.mount( 'nfs' ) ];
+			if ( shareddata ) tab.push( util.mount.rServer );
+			var icon       = 'networks';
+			var title      = shareddata ? 'Shared Data Server' : 'Add Network Storage';
+			var suffix     = { suffix: '<wh>*</wh>' }
+			var list       = [
+				  [ 'Type',      'hidden' ]
+				, [ 'Name',      'text', shareddata ? '' : suffix ]
+				, [ 'Server IP', 'text', suffix ]
+				, [ 'Share',     'text', suffix ]
+				, [ 'User',      'text']
+				, [ 'Password',  'password' ]
+				, [ 'Options',   'text' ]
+			];
+			if ( nfs ) list.splice( 4, 2 );
+			info( {
+				  icon       : icon
+				, title      : title
+				, tablabel   : shareddata ? util.mount.tab : [ 'CIFS', 'NFS' ]
+				, tab        : tab
+				, list       : list
+				, values     : values
+				, focus      : shareddata ? 1 : 0
+				, checkblank : [ 0, 2 ]
+				, checkip    : [ 1 ]
+				, beforeshow : () => {
+					var $input = $( '#infoList input' );
+					var $name  = $input.eq( 1 );
+					$input.eq( 3 ).prop( 'placeholder', nfs ? 'Share path on server' : 'Share name on server' );
+					$input.slice( 4 ).prop( 'placeholder', '(optional)' );
+					if ( shareddata ) {
+						$name
+							.val( 'data' )
+							.prop( 'disabled', true );
+					} else {
+						$name.prop( 'placeholder', 'Name to display in Library' );
+						$name.on( 'input', function() {
+							setTimeout( () => $name.val( $name.val().replace( /\//g, '' ) ), 0 );
+						} );
+					}
+				}
+				, cancel     : switchCancel
+				, oknoreset  : true
+				, ok         : () => {
+					var infoval = infoVal();
+					if ( ! shareddata && infoval.NAME === 'data' ) infoval.NAME += '1'; // reserve 'data' for shared data
+					infoval.SHAREDDATA = shareddata;
+					var keys = Object.keys( infoval );
+					var vals = Object.values( infoval );
+					notify( icon, title, shareddata ? 'Enable ...' : 'Add ...' );
+					util.mount.set( [ ...vals, 'CMD '+ keys.join( ' ' ) ] );
+				}
+			} );
+		}
+		, rServer : () => {
+			info( {
+				  ...SW
+				, tablabel  : util.mount.tab
+				, tab       : [ util.mount.mount, () => util.mount.mount( 'nfs' ), '' ]
+				, list      : [ 'Server IP', 'text' ]
+				, values    : { IP: I.active && I.values ? infoVal().IP : ipSub( S.ip ) }
+				, checkip   : [ 0 ]
+				, cancel    : switchCancel
+				, oknoreset : true
+				, ok        : () => {
+					notify( SW.icon, SW.title, 'Connect Server rAudio ...' );
+					util.mount.set( [ infoVal().IP, true, 'CMD IP SHAREDDATA' ] );
+				}
+			} );
+		}
+		, set     : error => {
+			bash( [ 'settings/system-mount.sh', 'cmd', ...args ], error => {
+				if ( error ) {
+					infoPrompt( '<wh>Mount failed:</wh><br><br>'+ error );
+				} else {
+					$( '#infoX' ).trigger( 'click' );
+				}
+			} );
+		}
+		, tab     : [ 'CIFS', 'NFS', ico( 'rserver' ) +' rAudio' ]
 	}
 	, powerbutton   : {
-		  ON       : 3
-		, SW       : 3
-		, LED      : 21
-		, RESERVED : 5
+		  sw : values => {
+			info( {
+				  ...SW
+				, tablabel     : [ 'Generic', 'Audiophonic' ]
+				, tab          : [ '', util.powerbutton.ap ]
+				, message      : util.gpiosvg
+				, list         : [ 
+					  [ 'On',       'select', { 5: 3 } ]
+					, [ 'Off',      'select', util.board2bcm ]
+					, [ 'LED',      'select', util.board2bcm ]
+				]
+				, boxwidth     : 70
+				, values       : values
+				, checkchanged : S.powerbutton
+				, beforeshow   : () => $( '.pwr' ).removeClass( 'hide' )
+				, cancel       : switchCancel
+				, ok           : switchEnable
+				, fileconf     : true
+			} );
+		}
+		, ap : () => {
+			info( {
+				  ...SW
+				, tablabel     : [ 'Generic', 'Audiophonic' ]
+				, tab          : [ () => infoSetting( 'powerbutton', util.powerbutton.sw ), '' ]
+				, list         : [ 'Power management module', 'checkbox' ]
+				, checkchanged : S.powerbutton
+				, values       : { ON: true }
+				, cancel       : switchCancel
+				, ok           : switchEnable
+			} );
+		}
 	}
-	, relays       : {
-		  ON      : [ 17, 27, 22, 23 ]
-		, OFF     : [ 23, 22, 27, 17 ]
-		, OND     : [ 2, 2, 2 ]
-		, OFFD    : [ 2, 2, 2 ]
-		, TIMERON : true
-		, TIMER   : 5
+	, refresh       : () => {
+		var $this = $( '.refresh' );
+		if ( $this.hasClass( 'blink' ) ) {
+			clearInterval( V.intstatus );
+			$this
+				.removeClass( 'i-refresh blink i-flash wh' )
+				.addClass( 'i-refresh' );
+			return
+		}
+		
+		$this.addClass( 'blink wh' )
+		V.intstatus = setInterval( () => {
+			bash( 'system-data.sh status', data => {
+				$( '#divstatus .value' ).html( data );
+				$this.toggleClass( 'i-refresh blink i-flash' );
+				setTimeout( () => $this.toggleClass( 'i-refresh blink i-flash' ), 300 );
+			} );
+		}, 10000 );
+		}
+	, relays        : {
+		  name   : data => {
+			var name   = data.relaysname;
+			var keys   = Object.keys( name );
+			var values = [];
+			keys.forEach( p => values.push( p, name[ p ] ) );
+			var list   = [
+				  [ '', '', { suffix: ico( 'gpiopins gr' ) +'Pin', sameline: true } ]
+				, [ '', '', { suffix: ico( 'tag gr' ) +' Name' } ]
+			]
+			var kL     = keys.length;
+			for ( i = 0; i < kL; i++ ) {
+				list.push( [ '', 'select', { kv: util.board2bcm, sameline: true } ], [ '', 'text' ] );
+			}
+			info( {
+				  ...SW
+				, tablabel     : util.relays.tab
+				, tab          : [ () => util.relays.order( data ), '' ]
+				, message      : util.gpiosvg
+				, list         : list
+				, boxwidth     : 70
+				, propmt       : true
+				, checkblank   : true
+				, checkchanged : S.relays
+				, checkunique  : true
+				, values       : values
+				, beforeshow   : () => {
+					$( '#infoList td' ).css( { 'padding-right': 0, 'text-align': 'left' } );
+					$( '#infoList td:first-child' ).remove();
+					$( '#infoList input' ).parent().addBack().css( 'width', '160px' );
+					infoListAddRemove( add => {
+						if ( add ) $( '#infoList .i-power' ).last().removeClass( 'red' );
+					} );
+					$( '#infoList tr' ).prepend( '<td>'+ ico( 'power' ) +'</td>' );
+					$( '#infoList td' ).eq( 0 ).empty();
+					util.relays.toggle();
+				}
+				, cancel       : switchCancel
+				, ok           : () => util.relays.set( data )
+			} );
+		}
+		, order  : data => {
+			var pin    = data.relays;
+			var name   = data.relaysname;
+			var names  = {}
+			$.each( name, ( k, v ) => { names[ v ] = k } );
+			var step   = { step: 1, min: 0, max: 10 }
+			var list   = [
+				  [ '', '', { suffix: ico( 'power grn' ) +' On <gr>(s)</gr>', sameline: true, colspan: 2 } ]
+				, [ '', '', { suffix: ico( 'power red' ) +' Off <gr>(s)</gr>', colspan: 2 } ]
+			];
+			var values = [];
+			var pL     = pin.ON.length;
+			for ( i = 0; i < pL; i++ ) {
+				list.push(
+					  [ '', 'select', { kv: names, sameline: true, colspan: 2 } ]
+					, [ '', 'select', { kv: names, colspan: 2 } ]
+				);
+				values.push( pin.ON[ i ], pin.OFF[ i ] );
+				if ( i < pL - 1 ) {
+					list.push(
+						  [ '', 'number', { updn: step, sameline: true } ]
+						, [ '', 'number', { updn: step } ]
+					);
+					values.push( pin.OND[ i ], pin.OFFD[ i ] );
+				} else {
+					list.push(
+						  [ ico( 'stoptimer yl' ) +' Idle to Off <gr>(m)</gr>', 'checkbox',       { sameline: true, colspan: 2 } ]
+						, [ '', 'number', { updn: { step: 1, min: 2, max: 30 } } ]
+					);
+					values.push( pin.TIMERON );
+					values.push( pin.TIMER );
+				}
+			}
+			info( {
+				  ...SW
+				, tablabel     : util.relays.tab
+				, tab          : [ '', () => util.relays.name( data ) ]
+				, list         : list
+				, boxwidth     : window.innerWidth > 410 ? 180 : window.innerWidth / 2 -20
+				, lableno      : true
+				, values       : values
+				, checkchanged : S.relays
+				, beforeshow   : () => {
+					$( '#infoList td' ).css( { 'padding-right': 0, 'text-align': 'left' } );
+					$( '#infoList td:first-child' ).remove();
+					$( '#infoList input[type=number]' ).parent().addBack().css( 'width', '70px' );
+					var $tdtimer = $( '#infoList tr:last td' );
+					var $timer   = $tdtimer.slice( 1 )
+					$tdtimer.eq( 0 ).css( { height: '40px','text-align': 'right' } );
+					$timer.toggleClass( 'hide', ! pin.TIMERON );
+					$( '#infoList' ).on( 'click', '.i-power', function() {
+						if ( S.relayson ) {
+							infoPrompt( util.relays.prompt );
+						} else {
+							bash( [ 'relays.sh', $( this ).hasClass( 'grn' ) ? '' : 'off' ] );
+						}
+					} );
+					$( '#infoList' ).on( 'input', 'select', function() {
+						var $select = $( '#infoList select' );
+						var von   = [];
+						var voff  = [];
+						$select.each( ( i, el ) => {
+							var ar = i % 2 ? von : voff;
+							ar.push( $( el ).val() );
+						} );
+						I.notunique = von.length !== new Set( von ).size || voff.length !== new Set( voff ).size;
+						if ( I.notunique ) banner( SW.icon, SW.title, 'Duplicate devices', 6000 )
+					} );
+					$( '#infoList input:checkbox' ).on( 'input', function() {
+						$timer.toggleClass( 'hide', ! $( this ).prop( 'checked' ) );
+					} );
+				}
+				, cancel       : switchCancel
+				, ok           : () => util.relays.set( data )
+			} );
+		}
+		, prompt : '<a class="helpmenu label">Relay Module<i class="i-relays"></i></a> is currently ON'
+		, set    : data => {
+			var order   = data.relays;
+			var name    = data.relaysname;
+			var v       = infoVal();
+			var tabname = I.tab[ 0 ];
+			if ( tabname ) {
+				v.forEach( ( el, i ) => i % 2 ? name[ p ] = el : p = el );
+				var on = Object.keys( name );
+				if ( on.sort().join() !== order.ON.slice().sort().join() ) {
+					order.ON  = on;
+					order.OFF = on.slice().reverse();
+				}
+			} else {
+				var pL = order.ON.length;
+				for ( i = 0; i < pL; i++ ) {
+					var j          = i * 4;
+					order.ON[ i ]  = v[ j ];
+					order.OFF[ i ] = v[ j + 1 ];
+					if ( i < pL - 1 ) {
+						order.OND[ i ]  = v[ j + 2 ];
+						order.OFFD[ i ] = v[ j + 3 ];
+					} else {
+						order.TIMER = v[ v.length - 1 ];
+						order.TIMERON = v[ v.length - 2 ];
+					}
+				}
+			}
+			var keys    = Object.keys( data.relays );
+			var pins    = [];
+			keys.forEach( k => {
+				var val =  order[ k ];
+				if ( Array.isArray( val ) ) val = val.join( ' ' );
+				pins.push( val );
+			} );
+			notifyCommon();
+			bash( [ 'relays', ...pins, 'CFG '+ keys.join( ' ' ) ] );
+			jsonSave( 'relays', name );
+			if ( tabname ) util.relays.name( data );
+		}
+		, tab    : [ ico( 'power' ) +' Sequence', ico( 'tag' ) +' Pin - Name' ]
+		, toggle : () => {
+			$( '#infoList' ).on( 'click', '.i-power', function() {
+				if ( S.relayson ) {
+					infoPrompt( util.relays.prompt );
+				} else {
+					var $this = $( this );
+					var pin   = +$this.parents( 'tr' ).find( 'select' ).val();
+					bash( [ 'gpiopintoggle', pin, 'CMD PIN' ], onoff => $this.toggleClass( 'red', onoff == 1 ) );
+				}
+			} );
+		}
 	}
-	, relaysname    : {
-		  17 : 'DAC'
-		, 27 : 'PreAmp'
-		, 22 : 'Amp'
-		, 23 : 'Subwoofer'
+	, renderStorage : () => {
+		var html  = '';
+		$.each( S.liststorage, ( i, v ) => {
+			var mountpoint = v.mountpoint === '/' ? 'SD' : v.mountpoint.replace( '/mnt/MPD/', '' );
+			var dot = '<grn>&ensp;•&ensp;</grn>';
+			if ( ! v.size ) dot = dot.replace( /grn/g, 'red' );
+			html += '<li>'+ ico( v.icon ) + mountpoint + dot + v.size +' <c>'+ v.source +'</c></li>';
+		} );
+		$( '#list' ).html( html );
 	}
-	, rotaryencoder : {
-		  PINA : 27
-		, PINB : 22
-		, PINS : 23
-		, STEP : 1
+	, restoreReset  : () => {
+		info( {
+			  ...SW
+			, tablabel : [ 'From Backup', 'Reset To Default' ]
+			, tab      : [ () => $( '#restore' ).triger( 'click' ), '' ]
+			, list     : [
+				  [ 'Keep Library data',     'checkbox' ]
+				, [ 'Keep Network settings', 'checkbox' ]
+			]
+			, oklabel  : ico( 'set0' ) +'Reset'
+			, okcolor  : orange
+			, ok       : () => {
+				notifyCommon( 'Reset to default ...' );
+				bash( [ 'settings/system-datareset.sh', 'cmd', ...infoVal(), 'CMD KEEPLIBRARY KEEPNETWORK' ] );
+				loader();
+			}
+		} );
+		$( '#restore' ).prop( 'checked', 0 );
 	}
-	, softlimit     : {
-		SOFTLIMIT : 65
+	, server        : {
+		  mirror : () => {
+			notifyCommon( 'Get mirror server list ...' );
+			infoSetting( 'servermirror', data => {
+				bannerHide();
+				SW.id = 'mirror';
+				info( {
+					  ...SW
+					, tablabel     : [ 'Time', 'Package Mirror' ]
+					, tab          : [ () => infoSetting( 'serverntp', util.server.ntp ), '' ]
+					, list         : [ 'Mirror', 'select', data.list ]
+					, boxwidth     : 240
+					, values       : data.values
+					, checkchanged : true
+					, beforeshow   : () => selectText2Html( { Auto: 'Auto <gr>(by Geo-IP)</gr>' } )
+					, ok           : switchEnable
+				} );
+			} );
+		}
+		, ntp    : () => {
+			infoSetting( 'serverntp', data => {
+				SW.id    = 'ntp';
+				SW.title = 'Servers';
+				if ( ! data.rpi01 ) {
+					SW.tablabel = [ 'Time', 'Package Mirror' ];
+					SW.tab      = [ '', util.server.mirror ];
+				}
+				info( {
+					  ...SW
+					, list         : [ 'NTP', 'text' ]
+					, boxwidth     : 240
+					, values       : data.values
+					, checkchanged : true
+					, checkblank   : [ 0 ]
+					, ok           : switchEnable
+				} );
+			} );
+		}
 	}
-	, vuled         : {
-		  P0 : 14
-		, P1 : 15
-		, P2 : 18
-		, P3 : 23
-		, P4 : 24
-		, P5 : 25
-		, P6 : 8
-	}
-	, wlan          : {
-		  REGDOM : '00'
-		, APAUTO : true
+	, wm5102        : () => {
+		infoSetting( 'audio-wm5102', data => {
+			var icon   = 'i2s';
+			var output = $( '#i2smodule' ).find( ':selected' ).text();
+			info( {
+				  icon         : icon
+				, title        : output
+				, list         : [ 'Output', 'select', {
+					  Headphones : 'HPOUT1 Digital'
+					, 'Line out' : 'HPOUT2 Digital'
+					, SPDIF      : 'SPDIF Out'
+					, Speakers   : 'SPKOUT Digital'
+				} ]
+				, boxwidth     : 130
+				, values       : data.outputtype
+				, checkchanged : S.i2smodule
+				, ok           : () => {
+					notify( icon, output, 'Change ...' );
+					bash( [ 'i2smodule', 'cirrus-wm5102', output, infoVal(), 'CMD APLAYNAME OUTPUT OUTPUTTYPE' ] );
+				}
+			} );
+		} );
 	}
 }
-var gpiosvg       = $( '#gpiosvg' ).html();
-var board2bcm     = {
-	   3:2,   5:3,   7:4,   8:14, 10:15, 11:17, 12:18, 13:27, 15:22, 16:23, 18:24, 19:10, 21:9
-	, 22:25, 23:11, 24:8,  26:7,  29:5,  31:6,  32:12, 33:13, 35:19, 36:16, 37:26, 38:20, 40:21
+
+function onPageInactive() {
+	clearInterval( V.intstatus );
 }
-var lcdcharaddr   = S.lcdcharaddr || [ 39, 63 ];
-var i2caddress    = {};
-lcdcharaddr.forEach( el => i2caddress[ '0x'+ el.toString( 16 ) ] = el );
-var lcdcharlist   = [
-	  [ 'Type',            'hidden' ]
-	, [ 'Size',            'radio', { '20x4': 20, '16x2': 16 } ]
-	, [ 'Character Map',   'radio', [ 'A00', 'A02' ] ]
-	, [ 'Address',         'radio', i2caddress ]
-	, [ 'I&#178;C Chip',   'select', [ 'PCF8574', 'MCP23008', 'MCP23017' ] ]
-	, [ 'Sleep <gr>(60s)', 'checkbox' ]
-];
-var lcdcharjson   = {
-	  icon         : 'lcdchar'
-	, title        : 'Character LCD'
-	, tablabel     : [ 'I&#178;C', 'GPIO' ]
-	, cancel       : switchCancel
-	, ok           : switchEnable
-	, fileconf     : true
+function renderPage() {
+	$( '#divsystem .value' ).html( S.system );
+	$( '#divstatus .value' ).html( S.status );
+	util.renderStorage();
+	if ( 'bluetooth' in S || 'wlan' in S ) {
+		if ( 'bluetooth' in S ) {
+			$( '#divbluetooth .col-l' )
+				.toggleClass( 'single', ! S.bluetooth )
+				.toggleClass( 'status', S.bluetooth );
+			$( '#bluetooth' ).toggleClass( 'disabled', S.btconnected );
+		} else {
+			$( '#divbluetooth' ).addClass( 'hide' );
+		}
+		if ( 'wlan' in S ) {
+			$( '#wlan' )
+				.toggleClass( 'disabled', S.ap || S.wlanconnected )
+				.prev().html( S.ap ? icoLabel( 'Access Point', 'ap' ) +' is currently enabled.' : icoLabel( 'Wi-Fi', 'wifi' ) +' is currently connected.' );
+			$( '#divwlan .col-l' )
+				.toggleClass( 'single', ! S.wlan )
+				.toggleClass( 'status', S.wlan );
+		} else {
+			$( '#divwlan' ).addClass( 'hide' );
+		}
+	} else {
+		$( '#divbluetooth' ).parent().addClass( 'hide' );
+	}
+	$( '#audio' ).toggleClass( 'disabled', ! S.audiocards );
+	if ( S.i2smodule ) {
+		if ( $( '#i2smodule option' ).length ) {
+			util.i2sSelect.select();
+		} else {
+			$( '#i2smodule' ).html( '<option></option><option selected>'+ S.audiooutput +'</option>' );
+		}
+		util.i2sSelect.show();
+	} else {
+		util.i2sSelect.hide();
+	}
+	$( '#divsoundprofile' ).toggleClass( 'hide', ! S.lan );
+	$( '#hostname' )
+		.val( S.hostname )
+		.removeClass( 'disabled' );
+	$( '#avahiurl' ).text( S.hostname +'.local' );
+	if ( $( '#timezone option' ).length ) {
+		$( '#timezone' ).val( S.timezone );
+	} else {
+		$( '#timezone' ).html( `
+<option></option>
+<option value="${ S.timezone }" selected>${ S.timezone.replace( /\//, ' · ' ) +'&ensp;'+ S.timezoneoffset }</option>
+` );
+	}
+	$( '#shareddata' ).toggleClass( 'disabled', S.nfsserver );
+	$( 'a[ href ]' ).prop( 'tabindex', -1 );
+	showContent();
 }
-var lcdcharfooter = ico( 'raudio', 'lcdlogo', 'tabindex' ) +'Logo&emsp;'+ ico( 'screenoff', 'lcdoff', 'tabindex' ) +'Sleep';
-var relaystab     = [ ico( 'power' ) +' Sequence', ico( 'tag' ) +' Pin - Name' ];
-var tabshareddata = [ 'CIFS', 'NFS', ico( 'rserver' ) +' rAudio' ];
+ps.storage = data => {
+	S.liststorage = data.list;
+	util.renderStorage();
+	if ( ! $( '#data' ).hasClass( 'hide' ) ) $( '#data' ).html( highlightJSON( S ) )
+}
 
 $( function() { // document ready start >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-$( 'body' ).on( 'click', function( e ) {
-	$( '#menu' ).addClass( 'hide' );
-	if ( e.target.id !== 'codehddinfo' ) $( '#codehddinfo' ).addClass( 'hide' );
-	$( 'li' ).removeClass( 'active' );
-	if ( ! $( e.target ).hasClass( 'select2-search__field' ) 
-		&& ! $( e.target ).parents( '#divi2smodule' ).length 
-		&& $( '#i2smodule' ).val() === 'none'
-	) {
-		i2sSelectHide();
-	}
-} );
 $( '.power' ).on( 'click', infoPower );
 $( '.img' ).on( 'click', function() {
-	var name             = $( this ).data( 'name' );
-	var vcc1             = htmlC( 'ora', 'VCC', 1 );
-	var i2c              = '<br><wh>I²C:</wh>';
-	var scasdl           = htmlC( [ [ 'bll', 'SDA', 3 ], [ 'bll', 'SCL', 5 ] ] );
-	var txtlcdchar       = '<br><wh>GPIO:</wh> '+ htmlC( [ 
+	function htmlLegend( data, key, val ) {
+		if ( typeof data !== 'object' ) data = [ [ data, key, val ] ];
+		var html = '';
+		data.forEach( el => {
+			html += '<c>'+ el[ 1 ] +':<a class="'+ el[ 0 ] +'">'+ el[ 2 ] +'</a></c> ';
+		} );
+		return html
+	}
+	var name    = $( this ).data( 'name' );
+	var vcc1    = htmlLegend( 'ora', 'VCC', 1 );
+	var i2c     = '<br><wh>I²C:</wh>';
+	var scasdl  = htmlLegend( [ [ 'bll', 'SDA', 3 ], [ 'bll', 'SCL', 5 ] ] );
+	var gnd     = '<p class="gpiopins"><c>GND:(any &cir; pin)</c> &emsp; ';
+	var title   = {
+		  lcd           : [ 'TFT 3.5" LCD' ]
+		, lcdchar       : [ 'Character LCD' ]
+		, mpdoled       : [ 'Spectrum OLED' ]
+		, powerbutton   : [ 'Power Button',   'power' ]
+		, relays        : [ 'Relays Module' ]
+		, rotaryencoder : [ 'Rorary Encoder', 'volume' ]
+		, vuled         : [ 'VU LED',         'vuled' ]
+	}
+	var txt     = {
+		  lcdchar       : gnd +'<wh>GPIO:</wh> '+ htmlLegend( [ 
 								  [ 'red', 'VCC',   4 ]
 								, [ 'grn', 'RS',   15 ]
 								, [ 'grn', 'RW',   18 ]
 								, [ 'grn', 'E',    16 ]
 								, [ 'grn', 'D4-7', '21-24' ]
 							] )
-						  + i2c + vcc1 + htmlC( 'red', '5V', 4 ) + scasdl
-						  +'</p><br>'+ ico( 'warning yl' ) +' <wh>I²C VCC</wh> - 5V to 3.3V modification'
-						  +'<br><img style="margin: 5px 0 0; width: 120px; height: auto;" src="/assets/img/i2cbackpack.jpg">';
-	var txtmpdoled       = '<br>'+ vcc1
-						  + i2c + scasdl
-						  + '<br><wh>SPI:</wh>'+ htmlC( [
+						+ i2c + vcc1 + htmlLegend( 'red', '5V', 4 ) + scasdl
+						+'</p><br>'+ ico( 'warning yl' ) +' <wh>I²C VCC</wh> - 5V to 3.3V modification'
+						+'<br><img style="margin: 5px 0 0; width: 120px; height: auto;" src="/assets/img/i2cbackpack.jpg">'
+		, mpdoled       : gnd + vcc1
+						+ i2c + scasdl
+						+ '<br><wh>SPI:</wh>'+ htmlLegend( [
 								  [ 'grn', 'CLK', 23 ]
 								, [ 'grn', 'MOS', 19 ]
 								, [ 'grn', 'RES', 22 ]
 								, [ 'grn', 'DC',  18 ]
 								, [ 'grn', 'CS',  24 ]
-							] ) +'</p>';
-	var txtrotaryencoder = '<br><c>CLK, DT, SW: (any <grn>●</grn> pins)</c>'
-						  +'<br><c>+: not use</c></p>';
-	var title = {
-		  lcd           : [ 'TFT 3.5" LCD' ]
-		, lcdchar       : [ 'Character LCD',  txtlcdchar ]
-		, mpdoled       : [ 'Spectrum OLED',  txtmpdoled ]
-		, powerbutton   : [ 'Power Button',   '',               'power' ]
-		, relays        : [ 'Relays Module' ]
-		, rotaryencoder : [ 'Rorary Encoder', txtrotaryencoder, 'volume' ]
-		, vuled         : [ 'VU LED',         '',               'led' ]
+							] ) +'</p>'
+		, relays        : '<br>Jumper <c>High/Low Level Trigger</c>: <c>High</c>'
+		, rotaryencoder : gnd +'<c>CLK, DT, SW: (any <grn>●</grn> pins)</c>'
+						  +'<br><c>+: not use</c></p>'
 	}
-	var d                = title[ name ];
-	var gpio             = d[ 1 ] ? gpiosvg +'<p class="gpiopins"><c>GND:(any &cir; pin)</c> &emsp; ' + d[ 1 ] : '';
+	var list    = '<img src="/assets/img/'+ name +'.jpg?v='+ Math.round( Date.now() / 1000 ) +'">';
+	if ( ! [ 'lcd', 'powerbutton', 'relays', 'vuled' ].includes( name ) ) list += util.gpiosvg;
+	if ( name in txt ) list += '<br>'+ txt[ name ];
+	var pinhide = {
+		  lcdchar : [ 40, 38, 37, 36, 35, 33, 32, 31, 29, 26,     19,         13, 12, 11, 10, 8, 7 ]
+		, mpdoled : [ 40, 38, 37, 36, 35, 33, 32, 31, 29, 26, 21,     16, 15, 13, 12, 11, 10, 8, 7 ]
+	}
 	info( {
-		  icon       : d[ 2 ] || name
-		, title      : d[ 0 ]
-		, list       : '<img src="/assets/img/'+ name +'.jpg?v='+ Math.round( Date.now() / 1000 ) +'">'+ gpio
-		, beforeshow : () => $( '.'+ name +'-no' ).addClass( 'hide' )
+		  icon       : title[ name ][ 1 ] || name
+		, title      : title[ name ][ 0 ]
+		, list       : list
+		, beforeshow : () => {
+			if ( name in pinhide ) {
+				pinhide[ name ].forEach( n => {
+					$( '.board .p'+ n ).addClass( 'hide' );
+					$( '.bcm .p'+ util.board2bcm[ n ] ).addClass( 'hide' );
+				} );
+			}
+			$( '#infoList svg .power' ).toggleClass( 'hide', [ 'mpdoled', 'rotaryencoder' ].includes( name ) );
+			$( '#infoList svg .mpdoled' ).toggleClass( 'hide', name !== 'mpdoled' );
+		}
 		, okno       : true
 	} );
 } );
-$( '.refresh' ).on( 'click', function() {
-	var $this = $( this );
-	if ( $this.hasClass( 'blink' ) ) {
-		intervalStatus( 'clear' );
-		return
-	}
-	
-	$this.addClass( 'blink wh' )
-	V.intstatus = setInterval( () => {
-		bash( [ 'settings/system-data.sh', 'status' ], data => {
-			intervalStatus( 'icon' );
-			$( '#divstatus .value' ).html( data.status + data.warning );
-			$( '#warning' ).toggleClass( 'hide', data.warning === '' );
-		}, 'json' );
-	}, 10000 );
-} );
-$( '#setting-softlimit' ).on( 'click', function() {
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [ '', 'radio', { '65°C': 65, '70°C': 70, '75°C': 75 } ]
-		, values       : S.softlimitconf || default_v.softlimit
-		, checkchanged : S.softlimit
-		, cancel       : switchCancel
-		, ok           : switchEnable
-	} );
-} );
+$( '.refresh' ).on( 'click', util.refresh );
 $( '.addnas' ).on( 'click', function() {
-	infoMount();
+	SW = { icon: 'networks' }
+	util.mount.mount();
 } );
 $( '#list' ).on( 'click', 'li', function( e ) {
 	e.stopPropagation();
 	var $this = $( this );
 	V.li      = $this;
 	var i     = $this.index()
-	var list  = S.list[ i ];
-	$( '#codehddinfo' )
+	var list  = S.liststorage[ i ];
+	$( '#codestorageinfo' )
 		.addClass( 'hide' )
 		.empty();
 	if ( [ '/mnt/MPD/NAS', '/mnt/MPD/NAS/data' ].includes( list.mountpoint ) ) {
@@ -224,413 +1006,51 @@ $( '#list' ).on( 'click', 'li', function( e ) {
 		$( '#menu .info' ).removeClass( 'hide' );
 	} else {
 		var mounted = list.size !== '';
-		$( '#menu .info' ).toggleClass( 'hide', ! list.info );
 		$( '#menu .forget' ).toggleClass( 'hide', list.mountpoint.slice( 0, 12 ) !== '/mnt/MPD/NAS' );
 		$( '#menu .remount' ).toggleClass( 'hide', mounted );
-		$( '#menu .sleep' ).toggleClass( 'hide', ! list.apm );
 		$( '#menu .unmount' ).toggleClass( 'hide', ! mounted );
 	}
 	contextMenu();
 } );
-$( '#menu a' ).on( 'click', function() {
-	var $this      = $( this );
-	var cmd        = $this.prop( 'class' ).replace( ' active', '' );
-	var list       = S.list[ V.li.index() ];
-	var mountpoint = list.mountpoint;
-	var source     = list.source;
-	if ( mountpoint.slice( 9, 12 ) === 'NAS' ) {
-		var icon  = 'networks';
-		var title = 'Network Mount';
-	} else {
-		var icon  = 'usbdrive';
-		var title = 'Local Mount';
-	}
-	switch ( cmd ) {
-		case 'forget':
-			notify( icon, title, 'Forget ...' );
-			bash( [ 'mountforget', mountpoint, 'CMD MOUNTPOINT' ] );
-			break
-		case 'info':
-			var $code = $( '#codehddinfo' );
-			if ( $code.hasClass( 'hide' ) ) {
-				bash( [ 'storageinfo', source, 'CMD DEV' ], data => {
-					$code
-						.html( data )
-						.removeClass( 'hide' );
-				} );
-			} else {
-				$code.addClass( 'hide' );
-			}
-			break
-		case 'remount':
-			notify( icon, title, 'Remount ...' );
-			bash( [ 'mountremount', mountpoint, source, 'CMD MOUNTPOINT SOURCE' ] );
-			break;
-		case 'sleep':
-			title = 'HDD Sleep';
-			info( {
-				  icon         : icon
-				, title        : title
-				, list         : [ 'Timeout <gr>(min)</gr>', 'number', { updn: { step: 1, min: 0, max: 20 } } ]
-				, boxwidth     : 90
-				, footer       : '&emsp; &emsp;(0 = disabled)'
-				, values       : Math.round( list.apm * 5 / 60 )
-				, checkchanged : true
-				, ok           : () => {
-					var val = infoVal();
-					notify( icon, title, 'Change ...' );
-					bash( [ 'hddsleep', list.source, val ? val * 60 / 5 : 255, 'CMD DEV LEVEL' ] );
-				}
-			} );
-			break
-		case 'unmount':
-			notify( icon, title, 'Unmount ...' )
-			bash( [ 'mountunmount', mountpoint, 'CMD MOUNTPOINT' ] );
-			break
-	}
-} );
-$( '#setting-bluetooth' ).on( 'click', function() {
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [
-			  [ 'Discoverable <gr>by senders</gr>',             'checkbox' ]
-			, [ 'Sampling 16bit 44.1kHz <gr>to receivers</gr>', 'checkbox' ]
-		]
-		, values       : S.bluetoothconf || default_v.bluetooth
-		, checkchanged : S.bluetooth
-		, cancel       : switchCancel
-		, ok           : switchEnable
-	} );
-} );
-$( '#setting-wlan' ).on( 'click', function() {
-	if ( V.regdomlist ) {
-		infoWlan();
-	} else {
-		bash( [ 'regdomlist' ], list => {
-			V.regdomlist = list;
-			infoWlan();
-		}, 'json' );
-	}
-} );
-$( '#i2s' ).on( 'click', function() {
-	setTimeout( i2sOptionSet, 0 );
-} );
-$( '#divi2smodule .col-r' ).on( 'click', function( e ) {
-	if ( $( e.target ).parents( '.select2' ).length ) i2sOptionSet();
-} );
 $( '#i2smodule' ).on( 'input', function() {
-	var aplayname = $( this ).val();
-	var output    = $( this ).find( ':selected' ).text();
+	var aplayname = this.value;
 	var icon      = 'i2smodule';
 	var title     = 'Audio - I²S';
 	if ( aplayname === 'cirrus-wm5102' ) {
-		infoCirrusWM5102( output );
-		return
-	}
-	
-	if ( aplayname !== 'none' ) {
-		notify( icon, title, 'Enable ...' );
+		util.wm5102();
 	} else {
-		setTimeout( () => { notify( icon, title, 'Disable ...' ) }, 300 ); // fix - hide banner too soon
-		S.i2saudio = false;
-		i2sSelectHide();
+		bash( [ 'i2smodule', aplayname, $( this ).find( ':selected' ).text(), 'CMD APLAYNAME OUTPUT' ] );
+		if ( ! aplayname ) {
+			util.i2sSelect.hide();
+			var msg = 'Disable ...';
+		} else {
+			var msg = S.i2smodule ? 'Change ...' : 'Enable ...';
+		}
+		notify( icon, title, msg );
 	}
-	bash( [ 'i2smodule', aplayname, output, 'CMD APLAYNAME OUTPUT' ] );
-} );
-$( '#setting-i2smodule' ).on( 'click', function() {
-	if ( S.audioaplayname === 'cirrus-wm5102' ) {
-		infoCirrusWM5102( $( '#i2smodule' ).find( ':selected' ).text() );
-		return
-	}
+} ).on( 'select2:open', function( e ) {
+	if ( $( '#i2smodule option' ).length > 2 ) return
 	
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [ 'Disable I²S HAT EEPROM read', 'checkbox' ]
-		, values       : S.i2seeprom
-		, checkchanged : S.i2seeprom
-		, ok           : () => bash( infoVal() ? [ 'i2seeprom' ] : [ 'i2seeprom', 'OFF' ] )
-	} );
+	$( '#i2smodule' ).select2( 'close' );
+	util.i2sSelect.option();
+} ).on( 'select2:close', function () {
+	if ( ! this.value ) util.i2sSelect.hide();
 } );
-$( '#setting-lcdchar' ).on( 'click', function() {
-	if ( S.lcdcharconf ) {
-		S.lcdcharconf.INF === 'i2c' ? infoLcdChar() : infoLcdCharGpio();
-	} else {
-		infoLcdChar();
-	}
-} );
-$( '#setting-powerbutton' ).on( 'click', function() {
-	S.poweraudiophonics ? infoPowerbuttonAudiophonics() : infoPowerbutton();
-} );
-$( '#setting-relays' ).on( 'click', function() {
-	S.relays ? infoRelays() : infoRelaysName();
-} );
-$( '#setting-rotaryencoder' ).on( 'click', function() {
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [
-			  [ 'CLK',  'select', board2bcm ]
-			, [ 'DT',   'select', board2bcm ]
-			, [ 'SW',   'select', board2bcm ]
-			, [ 'Step', 'radio',  { '1%': 1, '2%': 2 } ]
-		]
-		, boxwidth     : 70
-		, values       : S.rotaryencoderconf || default_v.rotaryencoder
-		, checkchanged : S.rotaryencoder
-		, beforeshow   : () => {
-			$( '#infoList' ).prepend( gpiosvg );
-			$( '#infoList svg .power' ).remove();
-		}
-		, cancel       : switchCancel
-		, ok           : switchEnable
-		, fileconf     : true
-	} );
-} );
-$( '#setting-mpdoled' ).on( 'click', function() {
-	var buttonlogo = S.mpdoled && ! S.mpdoledreboot;
-	var chip       = {
-		  'SSD130x SP'  : 1
-		, 'SSD130x I²C' : 3
-		, 'Seeed I²C'   : 4
-		, 'SH1106 I²C'  : 6
-		, 'SH1106 SPI'  : 7
-	}
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [
-			  [ 'Controller', 'select', chip ]
-			, [ 'Refresh',    'select', { kv: [ 800000, 1000000, 1200000 ], suffix: 'baud' } ]
-		]
-		, values       : S.mpdoledconf
-		, checkchanged : S.mpdoled
-		, boxwidth     : 140
-		, beforeshow   : () => {
-			var i2c = ! S.mpdoled || ( S.mpdoled && S.mpdoledconf[ 1 ] );
-			$( '.baud' ).toggleClass( 'hide', ! i2c );
-			$( '.oledchip' ).on( 'input', function() {
-				var val = $( this ).val();
-				$( '.baud' ).toggleClass( 'hide', val < 3 || val > 6 );
-			} );
-		}
-		, cancel       : switchCancel
-		, buttonlabel  : buttonlogo ? ico( 'raudio' ) +'Logo' : ''
-		, button       : buttonlogo ? () => bash( [ 'mpdoledlogo' ] ) : ''
-		, ok           : switchEnable
-	} );
-} );
-$( '#setting-tft' ).on( 'click', function() {
-	var type = {
-		  'Generic'               : 'tft35a'
-		, 'Waveshare (A)'         : 'waveshare35a'
-		, 'Waveshare (B)'         : 'waveshare35b'
-		, 'Waveshare (B) Rev 2.0' : 'waveshare35b-v2'
-		, 'Waveshare (C)'         : 'waveshare35c'
-	}
-	var buttoncalibrate = S.tft && ! S.tftreboot;
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [ 'Type', 'select', type ]
-		, values       : { MODEL: S.tftconf || 'tft35a' }
-		, checkchanged : S.tft
-		, boxwidth     : 190
-		, buttonlabel  : ! buttoncalibrate ? '' : 'Calibrate'
-		, button       : ! buttoncalibrate ? '' : () => {
-			info( {
-				  icon    : SW.icon
-				, title   : SW.title
-				, message : 'Calibrate touchscreen?'
-							+'<br>(Get stylus ready.)'
-				, ok      : () => {
-					notify( SW.icon, 'Calibrate Touchscreen', 'Start ...' );
-					bash( [ 'tftcalibrate' ] );
-				}
-			} );
-		}
-		, cancel       : switchCancel
-		, ok           : switchEnable
-	} );
-} );
-$( '#setting-vuled' ).on( 'click', function() {
-	var list = [];
-	for ( i = 1; i < 8; i++ ) list.push(  [ i +'<gr>/7</gr>', 'select', board2bcm ] );
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : list
-		, values       : S.vuledconf || default_v.vuled
-		, checkchanged : S.vuled
-		, boxwidth     : 70
-		, beforeshow   : () => $( '#infoList' ).prepend( gpiosvg )
-		, cancel       : switchCancel
-		, ok           : switchEnable
-		, fileconf     : true
-	} );
-} );
-$( '#ledcalc' ).on( 'click', function() {
-	info( {
-		  icon       : 'led'
-		, title      : 'LED Resister Calculator'
-		, list       : [
-			  [ 'GPIO <gr>(V)</gr>',                'number' ]
-			, [ 'Current <gr>(mA)</gr>',            'number' ]
-			, [ 'LED forward voltage <gr>(V)</gr>', 'number' ]
-			, [ 'Resister <gr>(&#8486;)</gr>',      'number' ]
-		]
-		, focus      : 0
-		, values     : [ 3.3, 5 ]
-		, boxwidth   : 70
-		, beforeshow : () => {
-			$( '#infoList input' ).prop( 'disabled', 1 );
-			$( '#infoList input' ).eq( 2 )
-				.prop( 'disabled', 0 )
-				.on( 'input', function() {
-					var fv = $( this ).val();
-					if ( fv > 3.3 ) {
-						var ohm = '( > 3.3V)';
-					} else {
-						var ohm = fv ? Math.round( ( 3.3 - fv ) / 0.005 ) : '';
-					}
-					$( '#infoList input' ).eq( 3 ).val( ohm );
-				} );
-		}
-		, okno       : true
-	} );
-} );
-$( '#hostname' ).on( 'click', function( e ) {
-	if ( e.hasOwnProperty( 'originalEvent' ) ) $( this ).trigger( 'blur' );;
-	SW.icon  = 'system';
-	SW.title = 'Player Name';
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [ 'Name', 'text' ]
-		, focus        : 0
-		, values       : S.hostname
-		, checkblank   : true
-		, checkchanged : true
-		, beforeshow   : () => {
-			$( '#infoList input' ).on( 'input', function() {
-				$( this ).val( $( this ).val().replace( /[^a-zA-Z0-9-]+/g, '' ) );
-			} );
-		}
-		, ok           : () => {
-			var val = infoVal();
-			$( '#hostname' ).val( val );
-			banner( SW.icon +' blink', SW.title, 'Change ...', -1 );
-			bash( [ 'hostname', val, 'CMD NAME' ] );
-		}
-	} );
-} );
+$( '#ledcalc' ).on( 'click', util.ledcalc );
+$( '#hostname' ).on( 'click', util.hostname );
 $( '#timezone' ).on( 'input', function( e ) {
-	notify( 'globe', 'Timezone', 'Change ...' );
-	bash( [ 'timezone', $( this ).val(), 'CMD TIMEZONE' ] );
+	notify( 'timezone', 'Timezone', 'Change ...' );
+	bash( [ 'timezone', this.value, 'CMD TIMEZONE' ] );
 } ).on( 'select2:open', function( e ) {
 	if ( $( '#timezone option' ).length > 2 ) return
 	
-	$( '#timezone' ).select2( 'close' )
+	$( '#timezone' ).select2( 'close' );
 	$.post( 'cmd.php', { cmd: 'timezonelist' }, ( data ) => {
 		$( '#timezone' )
 			.html( data )
 			.val( S.timezone )
 			.select2( 'open' );
 	} );
-} );
-$( '#setting-timezone' ).on( 'click', function() {
-	infoNtp();
-} );
-$( '#setting-soundprofile' ).on( 'click', function() {
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [ 
-			  [ 'Swappiness',            'number' ]
-			, [ 'Max Transmission Unit', 'number', { suffix: 'byte' } ]
-			, [ 'Transmit Queue Length', 'number' ]
-		]
-		, boxwidth     : 70
-		, values       : S.soundprofileconf
-		, checkchanged : true
-		, checkblank   : true
-		, cancel       : switchCancel
-		, ok           : switchEnable
-		, fileconf     : true
-	} );
-} );
-$( '#backup' ).on( 'click', function() {
-	var d     = new Date();
-	var month = '0'+ ( d.getMonth() + 1 );
-	var date  = '0'+ d.getDate();
-	var ymd   = d.getFullYear() + month.slice( -2 ) + date.slice( -2 );
-	info( {
-		  icon    : SW.icon
-		, title   : SW.title
-		, message : 'Save all data and settings'
-		, list    : [ 'Filename', 'text', { suffix: '.gz' } ]
-		, values  : 'rAudio_backup-'+ ymd
-		, ok      : () => {
-			notifyCommon( 'Process ...' );
-			bash( [ 'settings/system-databackup.sh' ], data => {
-				if ( data == 1 ) {
-					notifyCommon( 'Download ...' );
-					fetch( '/data/shm/backup.gz' )
-						.then( response => response.blob() )
-						.then( blob => {
-							var url = window.URL.createObjectURL( blob );
-							var a = document.createElement( 'a' );
-							a.style.display = 'none';
-							a.href = url;
-							a.download = infoVal() +'.gz';
-							document.body.appendChild( a );
-							a.click();
-							setTimeout( () => {
-								a.remove();
-								window.URL.revokeObjectURL( url );
-								bannerHide();
-							}, 1000 );
-						} ).catch( () => {
-							infoWarning( SW.icon, SW.title, 'File download failed.' )
-							bannerHide();
-						} );
-				} else {
-					info( {
-						  icon    : SW.icon
-						, title   : SW.title
-						, message : 'Backup failed.'
-					} );
-					bannerHide();
-				}
-			} );
-		}
-	} );
-	$( '#backup' ).prop( 'checked', 0 );
-} );
-$( '#restore' ).on( 'click', function() {
-	infoRestore();
-} );
-$( '#shareddata' ).on( 'click', function() {
-	var $this = $( this );
-	if ( $this.hasClass( 'disabled' ) ) return
-	
-	if ( S.shareddata ) {
-		info( {
-			  icon    : SW.icon
-			, title   : SW.title
-			, message : 'Disable and restore local data?'
-			, cancel  : () => $this.prop( 'checked', true )
-			, okcolor : orange
-			, ok      : () => {
-				notifyCommon( 'Disable ...' );
-				bash( [ 'shareddatadisable', 'OFF' ] );
-			}
-		} );
-	} else {
-		V.shareddata = true;
-		infoMount();
-	}
 } );
 $( '.listtitle' ).on( 'click', function( e ) {
 	var $this    = $( this );
@@ -651,9 +1071,9 @@ $( '.listtitle' ).on( 'click', function( e ) {
 		}
 		
 		var timeout = setTimeout( () => banner( 'system blink', 'Backend', 'List ...', -1 ), 1000 );
-		bash( [ 'packagelist', $target.text(), 'CMD INI' ], list => {
+		bash( 'data-config.sh packagelist '+ $target.text(), data => {
 			clearTimeout( timeout );
-			$list.html( list );
+			$list.html( data );
 			$target.addClass( 'wh' );
 			if ( localhost ) $( '.list a' ).removeAttr( 'href' );
 			bannerHide();
@@ -663,596 +1083,68 @@ $( '.listtitle' ).on( 'click', function( e ) {
 		$( '.listtitle a' ).removeAttr( 'class' );
 	}
 } );
-$( '#i2smodule, #timezone' ).on( 'select2:opening', function () { // temp css for dropdown width
-	$( 'head' ).append( `
-<style class="tmp">
-.select2-results { width: 330px }
-.select2-dropdown {
-	width: fit-content !important;
-	min-width: 100%;
-</style>
-` );
-} ).on( 'select2:close', function ( e ) {
-	$( 'style.tmp' ).remove();
-	if ( this.id === 'i2smodule' && this.value === 'none' ) i2sSelectHide();
+$( '#menu a' ).on( 'click', function() {
+	var $this      = $( this );
+	var cmd        = $this.prop( 'class' ).replace( ' active', '' );
+	var list       = S.liststorage[ V.li.index() ];
+	var mountpoint = list.mountpoint;
+	var source     = list.source;
+	if ( mountpoint.slice( 9, 12 ) === 'NAS' ) {
+		var icon  = 'networks';
+		var title = 'Network Mount';
+	} else {
+		var icon  = 'usbdrive';
+		var title = 'Local Mount';
+	}
+	switch ( cmd ) {
+		case 'forget':
+			notify( icon, title, 'Forget ...' );
+			bash( [ 'mountforget', mountpoint, 'CMD MOUNTPOINT' ] );
+			break
+		case 'info':
+			var $code = $( '#codestorageinfo' );
+			if ( $code.hasClass( 'hide' ) ) {
+				currentStatus( 'storageinfo', source );
+			} else {
+				$code.addClass( 'hide' );
+			}
+			break
+		case 'remount':
+			notify( icon, title, 'Remount ...' );
+			bash( [ 'mountremount', mountpoint, source, 'CMD MOUNTPOINT SOURCE' ] );
+			break;
+		case 'sleep':
+			var dev = list.source;
+			title   = 'HDD Sleep';
+			infoSetting( 'hddapm '+ dev, values => {
+				if ( ! values ) {
+					info( {
+						  icon    : icon
+						, title   : title
+						, message : '<c>'+ dev +'</c> not support'
+					} );
+					return
+				}
+				
+				info( {
+					  icon         : icon
+					, title        : title
+					, list         : [ 'Timeout <gr>(min)</gr>', 'number', { updn: { step: 1, min: 1, max: 20 } } ]
+					, boxwidth     : 90
+					, values       : Math.round( values * 5 / 60 )
+					, checkchanged : true
+					, ok           : () => {
+						notify( icon, title, 'Change ...' );
+						bash( [ 'hddapm', dev, infoVal() * 60 / 5, 'CMD DEV LEVEL' ] );
+					}
+				} );
+			} );
+			break
+		case 'unmount':
+			notify( icon, title, 'Unmount ...' )
+			bash( [ 'mountunmount', mountpoint, 'CMD MOUNTPOINT' ] );
+			break
+	}
 } );
 
 } ); // document ready end <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
-function htmlC( data, key, val ) {
-	if ( typeof data !== 'object' ) data = [ [ data, key, val ] ];
-	var html = '';
-	data.forEach( el => {
-		html += '<c>'+ el[ 1 ] +':<a class="'+ el[ 0 ] +'">'+ el[ 2 ] +'</a></c> ';
-	} );
-	return html
-}
-function i2sOptionSet() {
-	if ( $( '#i2smodule option' ).length > 2 ) {
-		if ( $( '#divi2smodule' ).hasClass( 'hide' ) ) {
-			i2sSelectShow();
-			$( '#i2smodule' ).select2( 'open' );
-		}
-	} else {
-		$( '#i2smodule' ).select2( 'close' );
-		bash( [ 'i2slist' ], list => {
-			list[ '(None / Auto detect)' ] = 'none';
-			$( '#i2smodule' ).html( htmlOption( list ) );
-			i2sOptionSetSelect();
-			i2sSelectShow();
-			$( '#i2smodule' ).select2( 'open' );
-		}, 'json' );
-	}
-}
-function i2sOptionSetSelect() {
-	$( '#i2smodule option' ).filter( ( i, el ) => { // for 1 value : multiple names
-		var $this = $( el );
-		return $this.text() === S.audiooutput && $this.val() === S.audioaplayname;
-	} ).prop( 'selected', true );
-}
-function i2sSelectHide() {
-	$( '#i2s' ).prop( 'checked', S.i2saudio );
-	$( '#divi2s' ).removeClass( 'hide' );
-	$( '#divi2smodule' ).addClass( 'hide' );
-}
-function i2sSelectShow() {
-	$( '#divi2s' ).addClass( 'hide' );
-	$( '#divi2smodule' ).removeClass( 'hide' );
-	$( '#setting-i2smodule' ).toggleClass( 'hide', ! S.i2saudio );
-}
-function infoCirrusWM5102( output ) {
-	info( {
-		  icon     : 'i2s'
-		, title    : output
-		, list     : [ 'Output', 'select', {
-			  Headphones : 'HPOUT1 Digital'
-			, 'Line out' : 'HPOUT2 Digital'
-			, SPDIF      : 'SPDIF Out'
-			, Speakers   : 'SPKOUT Digital'
-		} ]
-		, boxwidth : 130
-		, values   : S.audiowm5102 || 'HPOUT2 Digital'
-		, ok       : () => bash( [ 'i2smodule', 'cirrus-wm5102', output, infoVal(), 'CMD APLAYNAME OUTPUT OUTPUTTYPE' ] )
-	} );
-}
-function infoLcdChar() {
-	var confi2c = S.lcdcharconf && S.lcdcharconf.INF === 'i2c';
-	info( {
-		  ...lcdcharjson
-		, tab          : [ '', infoLcdCharGpio ]
-		, list         : jsonClone( lcdcharlist )
-		, footer       : lcdcharfooter
-		, boxwidth     : 180
-		, values       : confi2c ? S.lcdcharconf : default_v.lcdchar_i2c
-		, checkchanged : S.lcdchar && confi2c
-		, beforeshow   : infoLcdcharButton
-	} );
-}
-function infoLcdCharGpio() {
-	var confgpio = S.lcdcharconf && S.lcdcharconf.INF === 'gpio';
-	var list0    = jsonClone( lcdcharlist );
-	var list     = list0.slice( 0, 3 );
-	[ 'RS', 'RW', 'E', 'D4', 'D5', 'D6', 'D7' ].forEach( k => list.push( [ k, 'select', board2bcm ] ) );
-	list.push( list0.slice( -1 )[ 0 ] );
-	info( {
-		  ...lcdcharjson
-		, tab          : [ infoLcdChar, '' ]
-		, list         : list
-		, footer       : lcdcharfooter
-		, boxwidth     : 70
-		, values       : confgpio ? S.lcdcharconf : default_v.lcdchar_gpio
-		, checkchanged : S.lcdchar && confgpio
-		, beforeshow   : () => { 
-			infoLcdcharButton();
-			$( '#infoList tr' ).eq( 2 ).after( '<tr><td colspan="3">'+ gpiosvg +'</td></tr>' )
-		}
-	} );
-}
-function infoLcdcharButton() {
-	$( '#infoList svg .power' ).remove();
-	if ( ! S.lcdchar || S.lcdcharreboot ) return
-	
-	$( '#lcdlogo, #lcdoff' ).on( 'click', function() {
-		bash( [ 'lcdcharset', this.id.slice( 3 ), 'CMD ACTION' ] );
-	} );
-}
-function infoMirror() {
-	SW.id    = 'mirror';
-	SW.title = 'Servers';
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, tablabel     : [ 'Time', 'Package Mirror' ]
-		, tab          : [ infoNtp, '' ]
-		, list         : [ 'Mirror', 'select', V.htmlmirror ]
-		, boxwidth     : 240
-		, values       : { MIRROR: S.mirror }
-		, checkchanged : true
-		, beforeshow   : () => selectText2Html( { Auto: 'Auto <gr>(by Geo-IP)</gr>' } )
-		, ok           : switchEnable
-	} );
-}
-function infoMirrorList() {
-	if ( 'htmlmirror' in V ) {
-		infoMirror();
-	} else {
-		notifyCommon( 'Get mirror server list ...' );
-		bash( [ 'mirrorlist' ], list => {
-			V.htmlmirror = list;
-			infoMirror();
-			bannerHide();
-		}, 'json' );
-	}
-}
-function infoMount( nfs ) {
-	var nfs        = nfs || false;
-	var shareddata = SW.id === 'shareddata';
-	var values     = nfs ? default_v.mountnfs : default_v.mountcifs;
-	values.IP      = S.ipsub;
-	var tab = nfs ? [ infoMount, '' ] : [ '', () => infoMount( 'nfs' ) ];
-	if ( shareddata ) tab.push( infoMountRserver );
-	var icon       = 'networks';
-	var title      = shareddata ? 'Shared Data Server' : 'Add Network Storage';
-	var suffix     = { suffix: '<wh>*</wh>' }
-	var list       = [
-		  [ 'Type',      'hidden' ]
-		, [ 'Name',      'text', shareddata ? '' : suffix ]
-		, [ 'Server IP', 'text', suffix ]
-		, [ 'Share',     'text', suffix ]
-		, [ 'User',      'text']
-		, [ 'Password',  'password' ]
-		, [ 'Options',   'text' ]
-	];
-	if ( nfs ) list.splice( 4, 2 );
-	info( {
-		  icon       : icon
-		, title      : title
-		, tablabel   : shareddata ? tabshareddata : [ 'CIFS', 'NFS' ]
-		, tab        : tab
-		, list       : list
-		, prompt     : true
-		, values     : values
-		, checkblank : [ 0, 2 ]
-		, checkip    : [ 1 ]
-		, beforeshow : () => {
-			var $input = $( '#infoList input' );
-			var $name  = $input.eq( 1 );
-			$input.eq( 3 ).prop( 'placeholder', nfs ? 'Share path on server' : 'Share name on server' );
-			$input.slice( 4 ).prop( 'placeholder', '(optional)' );
-			if ( shareddata ) {
-				$name
-					.val( 'data' )
-					.prop( 'disabled', true );
-			} else {
-				$name.prop( 'placeholder', 'Name to display in Library' );
-				$name.on( 'input', function() {
-					setTimeout( () => $name.val( $name.val().replace( /\//g, '' ) ), 0 );
-				} );
-			}
-		}
-		, cancel     : switchCancel
-		, ok         : () => {
-			var infoval = infoVal();
-			if ( ! shareddata && infoval.NAME === 'data' ) infoval.NAME += '1'; // reserve 'data' for shared data
-			infoval.SHAREDDATA = shareddata;
-			var keys = Object.keys( infoval );
-			var vals = Object.values( infoval );
-			notify( icon, title, shareddata ? 'Enable ...' : 'Add ...' );
-			bash( [ 'settings/system-mount.sh', 'cmd', ...vals, 'CMD '+ keys.join( ' ' ) ], error => infoMountSet( error ) );
-		}
-	} );
-}
-function infoMountRserver() {
-	info( {
-		  icon     : SW.icon
-		, title    : SW.title
-		, tablabel : tabshareddata
-		, tab      : [ infoMount, () => infoMount( 'nfs' ), '' ]
-		, list     : [ 'Server IP', 'text' ]
-		, prompt   : true
-		, values   : { IP: I.active && I.values ? infoVal().IP : S.ipsub }
-		, checkip  : [ 0 ]
-		, cancel   : switchCancel
-		, ok       : () => {
-			notify( SW.icon, SW.title, 'Connect Server rAudio ...' );
-			bash( [ 'settings/system-mount.sh', 'cmd', infoVal().IP, true, 'CMD IP SHAREDDATA' ], error => infoMountSet( error ) );
-		}
-	} );
-}
-function infoMountSet( error ) {
-	if ( error ) {
-		infoPrompt( '<wh>Mount failed:</wh><br><br>'+ error );
-	} else {
-		$( '#infoX' ).trigger( 'click' );
-	}
-	bannerHide();
-}
-function infoNtp() {
-	SW.id    = 'ntp';
-	SW.title = 'Servers';
-	var json = {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [ 'NTP', 'text' ]
-		, boxwidth     : 240
-		, values       : { NTP: S.ntp }
-		, checkchanged : true
-		, checkblank   : [ 0 ]
-		, ok           : switchEnable
-	}
-	if ( ! S.rpi01 ) {
-		json.tablabel = [ 'Time', 'Package Mirror' ];
-		json.tab      = [ '', infoMirrorList ];
-	}
-	info( json );
-}
-function infoPowerbutton() {
-	var values = S.powerbuttonconf || default_v.powerbutton;
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, tablabel     : [ 'Generic', 'Audiophonic' ]
-		, tab          : [ '', infoPowerbuttonAudiophonics ]
-		, list         : [ 
-			  [ 'On',       'select', board2bcm ]
-			, [ 'Off',      'select', board2bcm ]
-			, [ 'LED',      'select', board2bcm ]
-			, [ 'Reserved', 'select', board2bcm ]
-		]
-		, boxwidth     : 70
-		, values       : values
-		, checkchanged : S.powerbutton
-		, beforeshow   : () => {
-			$( '#infoList' ).prepend( gpiosvg );
-			$( '#infoList td:first-child' ).css( 'width', '70px' );
-			$( '#infoList select' ).eq( 0 ).prop( 'disabled', true );
-			var $trreserved = $( '#infoList tr' ).last();
-			$trreserved.toggleClass( 'hide', values.SW == 3 );
-			$( '#infoList select' ).eq( 1 ).on( 'input', function() {
-				$trreserved.toggleClass( 'hide', $( this ).val() == 3 );
-			} );
-		}
-		, cancel       : switchCancel
-		, ok           : switchEnable
-		, fileconf     : true
-	} );
-}
-function infoPowerbuttonAudiophonics() {
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, tablabel     : [ 'Generic', 'Audiophonic' ]
-		, tab          : [ infoPowerbutton, '' ]
-		, list         : [ 'Power management module', 'checkbox' ]
-		, checkchanged : S.powerbutton
-		, values       : { ON: S.poweraudiophonics }
-		, cancel       : switchCancel
-		, ok           : switchEnable
-	} );
-}
-function infoRelays() {
-	var pin    = S.relaysconf     || default_v.relays;
-	var name   = S.relaysnameconf || default_v.relaysname;
-	var names  = {}
-	$.each( name, ( k, v ) => names[ v ] = k );
-	var step   = { step: 1, min: 0, max: 10 }
-	var list   = [
-		  [ '', '', { suffix: ico( 'power grn' ) +' On <gr>(s)</gr>', sameline: true, colspan: 2 } ]
-		, [ '', '', { suffix: ico( 'power red' ) +' Off <gr>(s)</gr>', colspan: 2 } ]
-	];
-	var values = [];
-	var pL     = pin.ON.length;
-	for ( i = 0; i < pL; i++ ) {
-		list.push(
-			  [ '', 'select', { kv: names, sameline: true, colspan: 2 } ]
-			, [ '', 'select', { kv: names, colspan: 2 } ]
-		);
-		values.push( pin.ON[ i ], pin.OFF[ i ] );
-		if ( i < pL - 1 ) {
-			list.push(
-				  [ '', 'number', { updn: step, sameline: true } ]
-				, [ '', 'number', { updn: step } ]
-			);
-			values.push( pin.OND[ i ], pin.OFFD[ i ] );
-		} else {
-			list.push(
-				  [ ico( 'stoptimer yl' ) +' Idle to Off <gr>(m)</gr>', 'checkbox',       { sameline: true, colspan: 2 } ]
-				, [ '', 'number', { updn: { step: 1, min: 2, max: 30 } } ]
-			);
-			values.push( pin.TIMERON );
-			values.push( pin.TIMER );
-		}
-	}
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, tablabel     : relaystab
-		, tab          : [ '', infoRelaysName ]
-		, list         : list
-		, boxwidth     : window.innerWidth > 410 ? 180 : window.innerWidth / 2 -20
-		, lableno      : true
-		, values       : values
-		, checkchanged : S.relays
-		, beforeshow   : () => {
-			infoRelaysCss( 70 );
-			var $trtimer = $( '#infoList tr:last' );
-			$trtimer.find( 'td' ).eq( 0 ).css( { height: '40px','text-align': 'right' } );
-			$( '#infoList' ).on( 'click', '.i-power', function() {
-				var on = $( this ).hasClass( 'grn' );
-				if ( ( S.relayson && on ) || ( ! S.relayson && ! on ) ) return
-				
-				bash( [ 'relays.sh', on ? '' : 'off' ] );
-			} );
-			$trtimer.on( 'input', 'input:checkbox', function() {
-				$trtimer.find( 'input[type=number], .updn' ).toggleClass( 'hide', ! $( this ).prop( 'checked' ) );
-			} );
-		}
-		, cancel       : switchCancel
-		, ok           : infoRelaysOk
-	} );
-}
-function infoRelaysCss( iW ) {
-	$( '#infoList td' ).css( { 'padding-right': 0, 'text-align': 'left' } );
-	$( '#infoList td:first-child' ).remove();
-	$( '#infoList input[type=number]' ).parent().addBack().css( 'width', iW +'px' );
-}
-function infoRelaysName() {
-	var name   = S.relaysnameconf || default_v.relaysname;
-	var keys   = Object.keys( name );
-	var bcmpin = [ 2, 3, 4, 14, 15, 17, 18, 27, 22, 23, 24, 10, 9, 25, 11, 8, 7, 5, 6, 12, 13, 19, 16, 26, 20, 21 ];
-	var pin    = [];
-	bcmpin.forEach( p => { // fix - numeric keys unsort
-		if ( keys.includes( ''+ p ) ) pin.push( p );
-	} );
-	var values = [];
-	pin.forEach( p => values.push( p, name[ p ] ) );
-	var list   = [
-		  [ '', '', { suffix: ico( 'gpiopins bl' ) +'Pin', sameline: true } ]
-		, [ '', '', { suffix: ico( 'tag bl' ) +' Name' } ]
-	]
-	var kL     = keys.length;
-	for ( i = 0; i < kL; i++ ) {
-		list.push( [ '', 'select', { kv: board2bcm, sameline: true } ], [ '', 'text' ] );
-	}
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, tablabel     : relaystab
-		, tab          : [ infoRelays, '' ]
-		, list         : list
-		, boxwidth     : 70
-		, checkblank   : true
-		, checkchanged : S.relays
-		, checkunique  : true
-		, values       : values
-		, beforeshow   : () => {
-			$( '#infoList' ).prepend( gpiosvg );
-			infoRelaysCss( 160 );
-			$( '#infoList tr' ).append( '<td>'+ ico( 'remove edit' ) +'</td>' );
-			$( '#infoList td' ).eq( 2 ).html( ico( 'plus edit' ) );
-			$( '#infoList' ).on( 'click', 'i:not( .bl )', function() {
-				var $this = $( this );
-				if ( $this.hasClass( 'i-plus' ) ) {
-					$( '#infoList select' ).select2( 'destroy' );
-					var $tr = $( '#infoList tr' ).last();
-					$tr.after( $tr.clone() );
-					selectSet();
-				} else {
-					$this.parents( 'tr' ).remove();
-				}
-				infoListChange();
-			} );
-		}
-		, cancel       : switchCancel
-		, ok           : infoRelaysOk
-	} );
-}
-function infoRelaysOk() {
-	if ( ! S.relaysconf ) { // force update values on ok
-		S.relaysconf     = default_v.relays;
-		S.relaysnameconf = default_v.relaysname;
-	}
-	var order   = S.relaysconf;
-	var name    = S.relaysnameconf;
-	var v       = infoVal();
-	var tabname = I.tab[ 0 ];
-	if ( tabname ) {
-		v.forEach( ( el, i ) => i % 2 ? name[ p ] = el : p = el );
-		var on = Object.keys( name );
-		if ( on.sort().join() !== order.ON.slice().sort().join() ) {
-			order.ON  = on;
-			order.OFF = on.slice().reverse();
-		}
-	} else {
-		var pL   = order.ON.length;
-		for ( i = 0; i < pL; i++ ) {
-			var j          = i * 4;
-			order.ON[ i ]  = v[ j ];
-			order.OFF[ i ] = v[ j + 1 ];
-			if ( i < pL - 1 ) {
-				order.OND[ i ]  = v[ j + 2 ];
-				order.OFFD[ i ] = v[ j + 3 ];
-			} else {
-				order.TIMER = v[ v.length - 1 ];
-				order.TIMERON = v[ v.length - 2 ];
-			}
-		}
-	}
-	var keys = Object.keys( S.relaysconf );
-	var pins = [];
-	keys.forEach( k => {
-		var val =  order[ k ];
-		if ( Array.isArray( val ) ) val = val.join( ' ' );
-		pins.push( val );
-	} );
-	notifyCommon();
-	var save = function() {
-		bash( [ 'relays', ...pins, 'CFG '+ keys.join( ' ' ) ] );
-		jsonSave( 'relays', name );
-		if ( tabname ) infoRelays();
-	}
-	S.relayson ? bash( [ 'relays.sh', 'off' ], save ) : save();
-}
-function infoRestore() {
-	info( {
-		  icon     : SW.icon
-		, title    : SW.title
-		, tablabel : [ 'From Backup', 'Reset To Default' ]
-		, tab      : [ '', infoRestoreReset ]
-		, list     : [ 'Library database only', 'checkbox' ]
-		, file     : { oklabel: ico( 'restore' ) +'Restore', type : '.gz' }
-		, oklabel  : ico( 'restore' ) +'Restore'
-		, okcolor  : orange
-		, ok       : () => {
-			notifyCommon( 'Restore ...' );
-			var formdata = new FormData();
-			formdata.append( 'cmd', 'datarestore' );
-			formdata.append( 'file', I.infofile );
-			formdata.append( 'libraryonly', infoVal() );
-			fetch( 'cmd.php', { method: 'POST', body: formdata } )
-				.then( response => response.text() )
-				.then( message => {
-					loaderHide();
-					if ( message ) {
-						bannerHide();
-						infoWarning(  SW.icon,  SW.title, message );
-					}
-				} );
-			loader();
-		}
-	} );
-	$( '#restore' ).prop( 'checked', 0 );
-}
-function infoRestoreReset() {
-	info( {
-		  icon     : SW.icon
-		, title    : SW.title
-		, tablabel : [ 'From Backup', 'Reset To Default' ]
-		, tab      : [ infoRestore, '' ]
-		, list     : [
-			  [ 'Keep Library data',     'checkbox' ]
-			, [ 'Keep Network settings', 'checkbox' ]
-		]
-		, oklabel  : ico( 'set0' ) +'Reset'
-		, okcolor  : orange
-		, ok       : () => {
-			notifyCommon( 'Reset to default ...' );
-			bash( [ 'settings/system-datareset.sh', 'cmd', ...infoVal(), 'CMD KEEPLIBRARY KEEPNETWORK' ] );
-			loader();
-		}
-	} );
-	$( '#restore' ).prop( 'checked', 0 );
-}
-function infoWlan() {
-	var autostart = 'Auto start Access Point<br> &emsp; &emsp; <gr>(if not connected)</gr>';
-	info( {
-		  icon         : SW.icon
-		, title        : SW.title
-		, list         : [
-			  [ 'Country', 'select', V.regdomlist ]
-			, [ autostart, 'checkbox' ]
-		]
-		, boxwidth     : 250
-		, values       : S.wlanconf || default_v.wlan
-		, checkchanged : S.wlan
-		, beforeshow   : () => selectText2Html( { '00': '00 <gr>(allowed worldwide)</gr>' } )
-		, cancel       : switchCancel
-		, ok           : switchEnable
-	} );
-}
-function intervalStatus( type ) {
-	var $icon = $( '#divstatus .refresh' );
-	if ( type === 'icon' ) {
-		$icon.toggleClass( 'i-refresh blink i-flash' );
-		setTimeout( () => $icon.toggleClass( 'i-refresh blink i-flash' ), 900 );
-	} else { // clear
-		clearInterval( V.intstatus );
-		$icon.removeClass( 'blink wh' );
-	}
-}
-function renderPage() {
-	$( '#divsystem .value' ).html( S.system );
-	$( '#divstatus .value' ).html( S.status + S.warning );
-	$( '#warning' ).toggleClass( 'hide', S.warning === '' );
-	$( 'softlimit' in S ? '.softlimitno' : '#divsoftlimit, .softlimit' ).remove();
-	renderStorage();
-	if ( 'bluetooth' in S || 'wlan' in S ) {
-		if ( 'bluetooth' in S ) {
-			$( '#divbluetooth .col-l' )
-				.toggleClass( 'single', ! S.bluetoothactive )
-				.toggleClass( 'status', S.bluetoothactive );
-		} else {
-			$( '#divbluetooth' ).addClass( 'hide' );
-		}
-		if ( 'wlan' in S ) {
-			$( '#wlan' )
-				.toggleClass( 'disabled', S.ap || S.wlanconnected )
-				.prev().html( S.ap ? icoLabel( 'Access Point', 'ap' ) +' is currently enabled.' : icoLabel( 'Wi-Fi', 'wifi' ) +' is currently connected.' );
-			$( '#divwlan .col-l' )
-				.toggleClass( 'single', ! S.wlan )
-				.toggleClass( 'status', S.wlan );
-		} else {
-			$( '#divwlan' ).addClass( 'hide' );
-		}
-	} else {
-		$( '#divbluetooth' ).parent().addClass( 'hide' );
-	}
-	$( '#audio' ).toggleClass( 'disabled', ! S.audiocards );
-	if ( S.i2saudio ) {
-		if ( $( '#i2smodule option' ).length ) {
-			i2sOptionSetSelect();
-		} else {
-			$( '#i2smodule' ).html( '<option></option><option selected>'+ S.audiooutput +'</option>' );
-		}
-		i2sSelectShow();
-	} else {
-		i2sSelectHide();
-	}
-	$( '#divsoundprofile' ).toggleClass( 'hide', ! S.soundprofileconf );
-	$( '#hostname' ).val( S.hostname );
-	$( '#avahiurl' ).text( S.hostname +'.local' );
-	if ( $( '#timezone option' ).length ) {
-		$( '#timezone' ).val( S.timezone );
-	} else {
-		$( '#timezone' ).html( `
-<option></option>
-<option value="${ S.timezone }" selected>${ S.timezone.replace( /\//, ' &middot; ' ) +'&ensp;'+ S.timezoneoffset }</option>
-` );
-	}
-	$( '#shareddata' ).toggleClass( 'disabled', S.nfsserver );
-	$( '#setting-shareddata' ).remove();
-	$( 'a[ href ]' ).prop( 'tabindex', -1 );
-	showContent();
-}
-function renderStorage() {
-	delete S.hddapm;
-	var html  = '';
-	$.each( S.list, ( i, v ) => {
-		var mountpoint = v.mountpoint === '/' ? 'SD' : v.mountpoint.replace( '/mnt/MPD/', '' );
-		var dot = '<grn>&ensp;•&ensp;</grn>';
-		if ( ! v.size ) dot = dot.replace( /grn/g, 'red' );
-		html += '<li>'+ ico( v.icon ) + mountpoint
-				+ dot +'<gr class="source">'+ v.source +'</gr>&ensp;'+ v.size +'</li>';
-	} );
-	$( '#list' ).html( html );
-}

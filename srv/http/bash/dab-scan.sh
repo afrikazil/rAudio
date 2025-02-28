@@ -2,23 +2,26 @@
 
 . /srv/http/bash/common.sh
 
-killProcess dabscan
-echo $$ > $dirshm/piddabscan
+basename $0 .sh > $dirshm/script
 
-script -c 'dab-scanner-rtlsdr -C 5A' $dirshm/dabscan &> /dev/null # capture /dev/tty to file
-if ! grep -q ^audioservice $dirshm/dabscan; then
-	notify dabradio 'DAB Radio' 'No stations found.'
-	rm $dirshm/{dabscan,updatingdab}
+echo
+dabscan=$( tty2std 'dab-scanner-rtlsdr -C 5A' ) # capture /dev/tty
+if ! grep -q ^audioservice <<< $dabscan; then
+	echo '
+<a class="cbr cw"> ! </a> No stations found.
+'
 	exit
 # --------------------------------------------------------------------
 fi
+
+dirdabradio=$dirdata/dabradio
 mv $dirdabradio/img $dirshm &> /dev/null
 rm -rf $dirdabradio
 mkdir -p $dirdabradio/img
 mv $dirshm/img $dirdabradio &> /dev/null
 
 host=$( hostname -f )
-services=$( sed -E -n '/^Ensemble|^audioservice/ {s/ *;/;/g; p}' $dirshm/dabscan )
+services=$( sed -E -n '/^Ensemble|^audioservice/ {s/ *;/;/g; p}' <<< $dabscan )
 while read service; do
 	if [[ ${service:0:8} == Ensemble ]]; then
 		ensemble=$( cut -d' ' -f2- <<< ${service/;*} | sed 's/\s*$//' )
@@ -52,4 +55,3 @@ chown -R http:http $dirdabradio
 dabradio=$( find -L $dirdabradio -type f ! -path '*/img/*' | wc -l )
 sed -i -E 's/("dabradio": ).*/\1'$dabradio',/' $dirmpd/counts
 pushData mpdupdate $( < $dirmpd/counts )
-rm $dirshm/{dabscan,updatingdab}

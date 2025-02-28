@@ -31,18 +31,9 @@ netctlSwitch() {
 	fi
 }
 wlanDevice() {
-	local iplinkw wlandev
-	iplinkw=$( ip -br link | grep -m1 ^w )
-	if [[ ! $iplinkw ]]; then
-		if [[ -e $dirshm/onboardwlan ]]; then
-			modprobe brcmfmac
-			ip link set wlan0 up
-			sleep 1
-			iplinkw=$( ip -br link | grep ^w )
-		fi
-	fi
-	if [[ $iplinkw ]]; then
-		wlandev=$( tail -1 <<< "$iplinkw" | cut -d' ' -f1 )
+	local wlandev
+	if test -e /sys/class/net/w*; then
+		wlandev=$( ls /sys/class/net | grep ^w )
 		echo $wlandev | tee $dirshm/wlan
 		( sleep 1 && iw $wlandev set power_save off ) &
 	else
@@ -52,14 +43,6 @@ wlanDevice() {
 
 case $CMD in
 
-bluetoothinfo )
-	info=$( bluetoothctl info $MAC )
-	grep -q -m1 'not available' <<< $info && exit
-# --------------------------------------------------------------------
-	echo "\
-<bll># bluetoothctl info $MAC</bll>
-$info"
-	;;
 btrename )
 	bluetoothctl set-alias "$NEWNAME"
 	amixer -D bluealsa scontrols | cut -d"'" -f2 > $dirshm/btmixer
@@ -71,15 +54,15 @@ connect )
 	wlandev=$( < $dirshm/wlan )
 	if [[ $ADDRESS ]]; then
 		ipAvailable $ADDRESS
-		ip=static
+		iptype=static
 	else
-		ip=dhcp
+		iptype=dhcp
 	fi
 	currentssid=$( iwgetid -r )
 	[[ $currentssid == $ESSID ]] && cp "/etc/netctl/$currentssid" $dirshm
 	data='Interface='$wlandev'
 Connection=wireless
-IP='$ip'
+IP='$iptype'
 ESSID="'$ESSID'"'
 	if [[ $KEY ]]; then
 		[[ $SECURITY ]] && security=wep || security=wpa
@@ -113,7 +96,7 @@ disconnect )
 	;;
 lanedit )
 	[[ $ADDRESS ]] && ipAvailable $ADDRESS
-	file=$( ls -1 /etc/systemd/network/e* | head -1 )
+	file=$( ls /etc/systemd/network/e* | head -1 )
 	if [[ $ADDRESS ]]; then # static
 		sed -i -E -e '/^DHCP|^Address|^Gateway/ d
 ' -e '/^DNSSEC/ i\
@@ -146,40 +129,6 @@ profileforget )
 	rm "/etc/netctl/$SSID"
 	pushRefresh networks pushwl
 	;;
-profileget )
-	. "/etc/netctl/$SSID"
-	data='{
-  "ESSID"    : "'$( quoteEscape $ESSID )'"
-, "KEY"      : "'$Key'"'
-	[[ $Address ]] && data+='
-, "ADDRESS"  : "'$Address'"
-, "GATEWAY"  : "'$Gateway'"'
-	data+='
-, "SECURITY" : '$( [[ $Security == wep ]] && echo true || echo false )'
-, "HIDDEN"   : '$( [[ $Hidden == yes ]] && echo true || echo false )'
-}'
-	echo "$data"
-	;;
-statuslan )
-	lan=$( ip -br link | awk '/^e/ {print $1; exit}' )
-	echo "\
-<bll># ifconfig $lan</bll>
-$( ifconfig $lan | grep -E -v 'RX|TX|^\s*$' )"
-	;;
-statuswebui )
-	echo "\
-<bll># avahi-browse -d local _http._tcp -rpt | awk -F';' '!/^+|^=;lo/ {print \$7\": \"\$8}'</bll>
-$( avahi-browse -d local _http._tcp -rpt | awk -F';' '!/^+|^=;lo/ {print $7": "$8}' )"
-	;;
-statuswl )
-	wlandev=$( < $dirshm/wlan )
-	echo "\
-<bll># ifconfig $wlandev</bll>
-$( ifconfig $wlandev | grep -E -v 'RX|TX')
-
-<bll># iwconfig $wlandev</bll>
-$( iwconfig $wlandev | awk NF )"
-	;;
 usbbluetoothon ) # from usbbluetooth.rules
 	! systemctl -q is-active bluetooth && systemctl start bluetooth
 	[[ ! -e $dirshm/startup ]] && exit # suppress on startup
@@ -203,6 +152,7 @@ usbwifion )
 	pushRefresh
 	;;
 usbwifioff )
+	wlanDevice
 	notify wifi 'USB Wi-Fi' Removed
 	pushRefresh
 	;;

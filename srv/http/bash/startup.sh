@@ -2,7 +2,6 @@
 
 . /srv/http/bash/common.sh
 
-# wifi - on-board or usb
 wlandev=$( $dirsettings/networks.sh wlandevice )
 
 # pre-configure >>>-----------------------------------------------------------
@@ -21,7 +20,11 @@ if [[ -e /boot/expand ]]; then # run once
 		resize2fs $partition
 	fi
 	revision=$( grep ^Revision /proc/cpuinfo )
-	if [[ ${revision: -3:2} == 12 ]]; then # zero 2
+	BB=${revision: -3:2}
+	# not legacy kernel && not RPi 5, 4: SAE(WPA3), FWSUP
+	[[ ! -e /boot/kernel.img && $BB < 11 ]] && echo 'options brcmfmac feature_disable=0x82000' > /etc/modprobe.d/brcmfmac.conf
+	# Zero 2
+	if [[ $BB == 12 ]]; then
 		systemctl enable getty@tty1
 		systemctl disable --now bootsplash localbrowser
 		pacman -R --noconfirm firefox matchbox-window-manager plymouth-lite-rbp-git upower \
@@ -151,11 +154,23 @@ fi
 
 touch $dirshm/startup
 
-if [[ -e $dirsystem/autoplay ]] && grep -q startup=true $dirsystem/autoplay.conf; then
+if grep -qs startup=true $dirsystem/autoplay.conf; then
 	mpcPlayback play
 fi
-
-[[ -e /boot/startup.sh ]] && /boot/startup.sh
+if [[ -e /boot/startup.sh ]]; then
+	/boot/startup.sh
+fi
 
 udevil clean
 lsblk -no path,vendor,model | grep -v ' $' > $dirshm/lsblkusb
+if [[ ! -e $diraddons/update ]]; then
+	data=$( curl -sfL https://github.com/rern/rAudio-addons/raw/main/addonslist.json )
+	if [[ $? == 0 ]]; then
+		echo "$data" > $diraddons/addonslist.json
+		rversion=$( sed -n '/"r1"/,/"version"/ {/version/!d; s/"//g; s/.*: //; p}' <<< $data )
+		if [[ $rversion != $( < $diraddons/r1 ) ]]; then
+			touch $diraddons/update
+			pushData option '{ "addons": 1 }'
+		fi
+	fi
+fi

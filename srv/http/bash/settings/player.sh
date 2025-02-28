@@ -22,17 +22,14 @@ autoupdate | ffmpeg | normalization )
 	systemctl restart mpd
 	pushRefresh
 	;;
-buffer | pllength | outputbuffer )
+buffer | outputbuffer )
 	if [[ $ON ]]; then
 		if [[ $CMD == buffer ]]; then
-			data='audio_buffer_size  "'$KB'"'
-			[[ $KB != 4096 ]] && link=1
-		elif [[ $CMD == pllength ]]; then
-			data='max_playlist_length  "'$LENGTH'"'
-			[[ $LENGTH != 16384 ]] && link=1
+			data='audio_buffer_size  "'$AUDIO_BUFFER_SIZE'"'
+			[[ $AUDIO_BUFFER_SIZE != 4096 ]] && link=1
 		else
-			data='max_output_buffer_size  "'$KB'"'
-			[[ $KB != 8192 ]] && link=1
+			data='max_output_buffer_size  "'$MAX_OUTPUT_BUFFER_SIZE'"'
+			[[ $MAX_OUTPUT_BUFFER_SIZE != 8192 ]] && link=1
 		fi
 		echo "$data" > $dirmpdconf/conf/$CMD.conf
 	fi
@@ -43,12 +40,6 @@ crossfade )
 	[[ $ON ]] && sec=$SEC || sec=0
 	mpc -q crossfade $sec
 	pushRefresh
-	;;
-customget )
-	echo "\
-$( getContent $dirmpdconf/conf/custom.conf )
-^^
-$( getContent "$dirsystem/custom-output-$DEVICE" )"
 	;;
 custom )
 	if [[ $ON ]]; then
@@ -64,9 +55,9 @@ custom )
 		[[ $GLOBAL || $OUTPUT ]] && touch $dirsystem/custom || rm -f $dirsystem/custom
 		$dirsettings/player-conf.sh
 		if ! systemctl -q is-active mpd; then # config errors
-			rm -f $fileglobal "$fileoutput" $dirsystem/custom
+			rm -f $fileglobal "$fileoutput" $dirmpd/custom.conf $dirsystem/custom
 			$dirsettings/player-conf.sh
-			echo 0
+			echo -1
 		fi
 	else
 		rm -f $dirmpdconf/custom.conf $dirsystem/custom
@@ -93,7 +84,8 @@ devicewithbt )
 	fi
 	;;
 dop )
-	filedop=$dirsystem/dop-${args[1]} # OFF with args - value by index
+	name=$( getVar name $dirshm/output )
+	filedop=$dirsystem/dop-$name # OFF with args - value by index
 	[[ $ON ]] && touch "$filedop" || rm -f "$filedop"
 	$dirsettings/player-conf.sh
 	;;
@@ -181,64 +173,11 @@ resampler {\
 $data
 }" > $dirmpdconf/conf/$CMD.conf
 		linkConf
-		echo $QUALITY > $dirsystem/soxr
 	fi
 	systemctl restart mpd
 	pushRefresh
 	;;
-statusalbumignore )
-	cat $dirmpd/albumignore
-	;;
-statusmpdignore )
-	files=$( < $dirmpd/mpdignorelist )
-	list="\
-<bll># find /mnt/MPD -name .mpdignore</bll>"
-	while read file; do
-		lines=$( < "$file" )
-		[[ $file == /mnt/MPD/NAS/.mpdignore ]] && lines=$( sed 's|^data$|& <yl>(rAudio Shared Data)</yl>|' <<< $lines )
-		path="<g>$( dirname "$file" )/</g>"
-		list+="
-$file
-$( sed "s|^|$path|" <<< $lines )"
-	done <<< $files
-	echo "$list"
-	;;
-statusnonutf8 )
-	cat $dirmpd/nonutf8
-	;;
-statusoutput )
-	bluealsa=$( amixer -D bluealsa 2> /dev/nulll \
-					| grep -B1 pvolume \
-					| head -1 )
-	[[ $bluealsa ]] && devices="\
-<bll># amixer -D bluealsa scontrols</bll>
-$bluealsa"$'\n'$'\n'
-	devices+="\
-<bll># cat /proc/asound/cards | grep ]</bll>
-$( cat /proc/asound/cards | grep ] )
-
-<bll># aplay -l | grep ^card</bll>
-$( aplay -l | grep ^card )"$'\n'
-	if [[ ! -e $dirsystem/camilladsp ]]; then
-		devices+="
-<bll># amixer scontrols</bll>"$'\n'
-		card=$( < $dirsystem/asoundcard )
-		aplayname=$( aplay -l | awk -F'[][]' '/^card $card/ {print $2}' )
-		if [[ $aplayname != RPi-Cirrus ]]; then
-			mixers=$( amixer scontrols )
-			[[ ! $mixers ]] && mixers="<gr>(card $card: no mixers)</gr>"
-			devices+="$mixers"$'\n'
-		else
-			devices+='(custom controls)'$'\n'
-		fi
-	fi
-	devices+="
-<bll># cat /etc/asound.conf</bll>
-$( < /etc/asound.conf )"
-	echo "$devices"
-	;;
 volume )
-	pageplayer=1
 	volume
 	;;
 volume0db )

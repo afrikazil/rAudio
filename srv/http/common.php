@@ -10,12 +10,15 @@
 	<meta name="application-name" content="rAudio">
 	<meta name="msapplication-tap-highlight" content="no">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-	<link rel="apple-touch-icon" sizes="180x180" href="/assets/img/icon.png?v=1728536864">
-	<link rel="icon" href="/assets/img/icon.png?v=1728536864">
+	<link rel="apple-touch-icon" sizes="180x180" href="/assets/img/icon.png">
+	<link rel="icon" href="/assets/img/icon.png">
 
 <?php
-$hash      = '?v=1728536860';
 $page      = $_GET[ 'p' ] ?? '';
+$pages     = [ 'features', 'player', 'networks', 'system', 'addons', 'addonsprogress', 'camilla', 'guide' ];
+foreach( $pages as $p ) $$p = false;
+$$page     = true;
+$hash      = '?v=1733402613';
 $css       = [ 'colors', 'common' ];
 $logosvg   = file_get_contents( '/srv/http/assets/img/icon.svg' );
 $filelogin = '/srv/http/data/system/login';
@@ -55,9 +58,6 @@ if ( ! $page ) { // main
 	}
 	$title = 'STATUS';
 } else {         // settings
-	$pages = [ 'features', 'player', 'networks', 'system', 'addons', 'addonsprogress', 'camilla', 'guide' ];
-	foreach( $pages as $p ) $$p = false;
-	$$page = true;
 	$cssp  = [];
 	$css[] = 'settings';
 	$jsp   = [ 'jquery', $networks ? 'qrcode' : 'select2' ];       // loaded with $.getScript: d3, pipelineplotter, plotly, qrcode
@@ -74,7 +74,7 @@ if ( ! $page ) { // main
 		$pagetitle = 'Addons-Progress';
 	} else if ( $camilla ) {
 		$icon      = 'camilladsp';
-		$pagetitle = 'Camilla DSP';
+		$pagetitle = 'CamillaDSP';
 		$css       = [ ...$css, 'camilla','equalizer' ];
 		$jsp[]     = 'Sortable';
 	} else if ( $guide ) {
@@ -85,19 +85,19 @@ if ( ! $page ) { // main
 	}
 	$title = $pagetitle;
 }
-$addon_guide = $guide || $addonsprogress;
-$keyboard    = $localhost && ! $addon_guide;
+$add_guide = $addonsprogress || $guide;
+$keyboard  = $localhost && ! $add_guide;
 if ( $keyboard ) foreach( [ 'cssp', 'css', 'jsp', 'js' ] as $ea ) $$ea[] = 'simplekeyboard';
 
-$html     = '';
-$htmlcss = '<link rel="stylesheet" href="/assets/css/';
+$html      = '';
+$htmlcss   = '<link rel="stylesheet" href="/assets/css/';
 foreach( $cssp as $c ) $html.= $htmlcss.'plugin/'.$cfiles[ $c ].'">';
 foreach( $css as $c )  $html.= $htmlcss.$c.'.css'.$hash.'">';
-$html    .= '
+$html     .= '
 </head>
 <body>
 ';
-if ( ! $addon_guide )  {
+if ( ! $add_guide )  {
 	$pageicon = $page ? i( $page.' page-icon' ) : '';
 	$html    .= '
 	<div id="infoOverlay" class="hide" tabindex="-1"></div>
@@ -105,7 +105,6 @@ if ( ! $addon_guide )  {
 	<div id="banner" class="hide"></div>
 	<div id="button-data" class="head hide">'.$pageicon.i( 'close' ).'<span class="title">'.$title.'-DATA</span></div>
 	<pre id="data" class="hide"></pre>
-	<div id="debug"></div>
 ';
 }
 if ( $keyboard )       $html.= '
@@ -113,8 +112,8 @@ if ( $keyboard )       $html.= '
 ';
 echo $html;
 
-$scripts = '';
-$htmljs  = '<script src="/assets/js/';
+$scripts   = '';
+$htmljs    = '<script src="/assets/js/';
 foreach( $jsp as $j )      $scripts.= $htmljs.'plugin/'.$jfiles[ $j ].'"></script>';
 foreach( $js as $j )       $scripts.= $htmljs.$j.'.js'.$hash.'"></script>';
 if ( ! $page || $camilla ) $scripts.= '<script>var jfiles = '.json_encode( $jfiles ).'</script>';
@@ -131,6 +130,7 @@ function htmlBottom() {
 	if ( $htmlbar ) $html.= '
 	<div id="fader" class="hide"></div>
 	<div id="bar-bottom" class="'.$class.'">'.$htmlbar.'</div>
+	<div id="debug"></div>
 	'.$scripts.'
 </body>
 </html>

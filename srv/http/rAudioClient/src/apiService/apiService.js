@@ -1,5 +1,5 @@
 class HttpService {
-	constructor(baseUrl = 'http://localhost:3000/api') {
+	constructor(baseUrl = 'http://raudio.local/api') {
 		this.baseUrl = baseUrl
 	}
 

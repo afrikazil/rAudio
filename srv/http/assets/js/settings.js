@@ -4,10 +4,8 @@ Naming must be the same for:
 	js     - id = icon = NAME, #setting-NAME
 	bash   - cmd=NAME, save to NAME.conf
 */
-
 S              = {} // status
-SW             = {} // switch
-V              = {} // var global
+V              = {}
 
 function bannerReset() {
 	var delay = $( '#bannerIcon i' ).hasClass( 'blink' ) ? 1000 : 3000;
@@ -15,35 +13,45 @@ function bannerReset() {
 	clearTimeout( I.timeoutbanner );
 	I.timeoutbanner = setTimeout( bannerHide, delay );
 }
-function currentStatus( id ) {
-	if ( id === 'bluetoothlist' ) return
-	
-	var $el      = $( '#code'+ id );
+function contextMenu() {
+	$( '#menu' )
+		.removeClass( 'hide' )
+		.css( 'top', $( '.container' ).scrollTop() + V.li.offset().top + 8 );
+	elementScroll( $( '#menu' ) );
+}
+function currentStatus( id, arg ) {
+	var $el = $( '#code'+ id );
 	if ( $el.hasClass( 'hide' ) ) var timeoutGet = setTimeout( () => notify( page, 'Status', 'Get data ...' ), 2000 );
-	var services = [ 'ap',        'bluealsa',       'bluez', 'camilladsp', 'dabradio',   'localbrowser', 'mpd'
-				   , 'nfsserver', 'shairport-sync', 'smb',   'snapclient', 'snapserver', 'spotifyd',     'upmpdcli' ];
-	bash( services.includes( id ) ? [ 'servicestatus.sh', id ] : [ 'status'+ id ], status => {
+	bash( 'data-status.sh '+ id + ( arg ? ' '+ arg : '' ), status => {
 		clearTimeout( timeoutGet );
-		$el.html( status + '<br>&nbsp;' ).promise().done( () => {
-			$el.removeClass( 'hide' );
-			if ( id === 'mpdconf' ) {
-				setTimeout( () => $( '#codempdconf' ).scrollTop( $( '#codempdconf' ).height() ), 100 );
-			}
-			if ( id === 'albumignore' || id === 'mpdignore' ) $( 'html, body' ).scrollTop( $( '#code'+ id ).offset().top - 90 );
-		} );
+		$el
+			.html( status )
+			.data( 'status', id )
+			.data( 'arg', arg || '' )
+			.removeClass( 'hide' );
+		if ( id === 'mpdconf' ) {
+			setTimeout( () => $( '#codempdconf' ).scrollTop( $( '#codempdconf' ).height() ), 100 );
+		} else if ( [ 'albumignore', 'mpdignore' ].includes( id ) ) {
+			$( '.container' ).scrollTop( $( '#code'+ id ).offset().top - 90 );
+		}
 		bannerReset();
 	} );
 }
-function infoPlayerActive( $this ) {
-	var $switch = $this.prev().prev();
-	if ( $switch.hasClass( 'disabled' ) ) {
-		info( {
-			  icon    : $switch.data( 'icon' )
-			, title   : $switch.data( 'label' )
-			, message : $switch.data( 'disabled' )
-		} );
-		return true
-	}
+function elementScroll( $el ) {
+	var menuH   = $el.height();
+	var targetB = $el.offset().top + menuH;
+	var wH      = window.innerHeight;
+	if ( targetB > wH - 40 + $( window ).scrollTop() ) $( '.container' ).animate( { scrollTop: targetB - wH + 42 } );
+}
+function infoSetting( id, callback ) {
+	var filesh = 'settings/data-config.sh '+ id;
+	if ( V.debug ) console.log( filesh );
+	$.post(
+		  'cmd.php'
+		, { cmd: 'bash', filesh: filesh }
+		, callback || config[ id ]
+		, 'json'
+	);
 }
 function json2array( keys, json ) {
 	if ( ! json ) return false
@@ -55,7 +63,7 @@ function json2array( keys, json ) {
 function list2JSON( list ) {
 	if ( list.trim() === 'notrunning' ) {
 		var pkg = page === 'player' ? 'mpd' : 'camilladsp';
-		bash( [ 'servicestatus.sh', pkg ], status => {
+		bash( 'data-service.sh '+ pkg, status => {
 			var error =  iconwarning +'<c>'+ pkg +'</c> is not running '
 						+'<a class="infobtn infobtn-primary restart">'+ ico( 'refresh' ) +'Start</a>'
 						+'<hr>'
@@ -74,24 +82,17 @@ function list2JSON( list ) {
 	}
 	
 	try {
-		S = JSON.parse( list );
+		if ( $.isEmptyObject( S ) ) {
+			S = JSON.parse( list );
+		} else {
+			list = JSON.parse( list );
+			$.each( list, ( k, v ) => { S[ k ] = v } );
+		}
 	} catch( e ) {
 		errorDisplay( e.message, list );
 		return false
 	}
 	return true
-}
-function contextMenu() {
-	$( '#menu' )
-		.removeClass( 'hide' )
-		.css( 'top', V.li.offset().top + 8 );
-	elementScroll( $( '#menu' ) );
-}
-function elementScroll( $el ) {
-	var menuH = $el.height();
-	var targetB = $el.offset().top + menuH;
-	var wH      = window.innerHeight;
-	if ( targetB > wH - 40 + $( window ).scrollTop() ) $( 'html, body' ).animate( { scrollTop: targetB - wH + 42 } );
 }
 function notify( icon, title, message, delay ) {
 	if ( typeof message === 'boolean' ) var message = message ? 'Enable ...' : 'Disable ...';
@@ -101,7 +102,7 @@ function notifyCommon( message ) {
 	if ( typeof message === 'boolean' ) {
 		message = message ? 'Enable ...' : 'Disable ...';
 	} else if ( ! message ) {
-		message = S[ SW.id ] ? 'Change ...' : 'Enable ...';
+		message = ! ( SW.id in S ) || S[ SW.id ] ? 'Change ...' : 'Enable ...';
 	}
 	banner( SW.icon +' blink', SW.title, message, -1 );
 }
@@ -116,7 +117,12 @@ function playbackButton() {
 function refreshData() {
 	if ( page === 'guide' || ( I.active && ! I.rangelabel ) ) return
 	
-	bash( [ 'settings/'+ page +'-data.sh' ], data => {
+	if ( page === 'features' && ! /features$/.test( window.location.href ) ) { // authorization: spotify / scrobble
+		util.redirect();
+		return
+	}
+	
+	bash( page +'-data.sh', data => {
 		if ( ! list2JSON( data ) ) return // on load, try catching any errors
 		
 		if ( $( '#data' ).hasClass( 'hide' ) || $( '#data .infobtn' ).length ) {
@@ -125,13 +131,12 @@ function refreshData() {
 			switchSet();
 			renderPage();
 		} else {
-			page === 'camilla' ? renderPage() : $( '#data' ).html( highlightJSON( S ) );
+			$( '#data' ).html( highlightJSON( S ) );
 			$( '#button-data, #data' ).removeClass( 'hide' );
 		}
 	} );
 }
 function showContent() {
-	V.ready ? delete V.ready : bannerReset();
 	if ( $( 'select' ).length ) selectSet( $( 'select' ) );
 	$( 'heading:not( .hide ) i, .switchlabel, .setting, input:text, .entries:not( .hide ) li:not( .lihead )' ).prop( 'tabindex', 0 );
 	$( '.container' )
@@ -140,8 +145,10 @@ function showContent() {
 	loaderHide();
 }
 function switchCancel() {
-	$( '#'+ SW.id ).prop( 'checked', S[ SW.id ] );
-	SWreset();
+	$( '#'+ SW.id )
+		.prop( 'checked', S[ SW.id ] )
+		.toggleClass( 'disabled', SW.disabled );
+	delete SW;
 	bannerHide();
 }
 function switchEnable() {
@@ -151,149 +158,135 @@ function switchEnable() {
 	var CMD_CFG = I.fileconf ? 'CFG ' : 'CMD ';
 	notifyCommon();
 	bash( [ SW.id, ...values, CMD_CFG + keys.join( ' ' ) ] );
-	S[ SW.id ] = true;
-	SWreset();
+	delete SW;
 }
-function switchIdIconTitle( id ) {
-	id       = id.replace( 'setting-', '' );
-	SW.id    = id;
-	SW.title = $( '#div'+ id +' .col-l .label' ).text();
-	if ( page === 'player' ) {
-		SW.icon  =  $( '#divoptions #'+ id ).length ? 'mpd' : 'volume';
-	} else {
-		SW.icon  = id;
-	}
-}
-function switchSet( ready ) {
-	if ( page === 'camilla' && ! ready ) return // wait for GetConfigJson
+function switchSet() {
+	if ( page === 'camilla' && V.tab !== 'devices' ) return
 	
-	$( '.switch' ).each( ( i, el ) => {
+	var $switch = $( '.switch' );
+	$switch.removeClass( 'disabled' );
+	$switch.each( ( i, el ) => $( el ).prop( 'checked', S[ el.id ] ) );
+	$( '.setting' ).each( ( i, el ) => {
 		var $this = $( el );
-		var id    = el.id
-		$this.prop( 'checked', S[ id ] );
-		$this.parent().next( '.setting' ).toggleClass( 'hide', ! S[ id ] );
+		var id    = el.id.slice( 8 ); // setting-id > id
+		id in config ? $this.toggleClass( 'hide', S[ id ] === false ) : $this.remove();
 	} );
-	$( 'pre.status' ).each( ( i, el ) => { // refresh code block
-		if ( el.id === 'codehddinfo' ) return
-		
-		if ( ! $( el ).hasClass( 'hide' ) ) currentStatus( el.id.replace( /^code/, '' ) ); // codeid > id
-	} );
-}
-function SWreset() {
-	[ 'id', 'icon', 'title' ].forEach( k => delete SW[ k ] );
+	$( 'pre.status:not( .hide )' ).each( ( i, el ) => currentStatus( $( el ).data( 'status' ), $( el ).data( 'arg' ) ) );
+	bannerHide();
 }
 
 function psOnMessage( channel, data ) {
-	switch ( channel ) {
-		case 'bluetooth': psBluetooth( data ); break;
-		case 'camilla':   psCamilla( data );   break;
-		case 'mpdplayer':
-		case 'mpdradio':  psMpdPlayer( data ); break;
-		case 'mpdupdate': psMpdUpdate( data ); break;
-		case 'notify':    psNotify( data );    break; // in common.js
-		case 'player':    psPlayer( data );    break;
-		case 'power':     psPower( data );     break;
-		case 'refresh':   psRefresh( data );   break;
-		case 'relays':    psRelays( data );    break;
-		case 'reload':    psReload( data );    break;
-		case 'storage':   psStorage( data );   break;
-		case 'volume':    psVolume( data );    break;
-		case 'wlan':      psWlan( data );      break;
-	}
-}
-function psBluetooth( data ) { // from networks-data,sh
-	if ( ! data ) {
-		if ( page === 'networks' ) {
-			S.listbt = data;
-			renderBluetooth();
-		} else if ( page === 'system' ) {
-			$( '#bluetooth' ).removeClass( 'disabled' );
-		}
-	} else if ( 'connected' in data ) {
-		if ( page === 'features' ) {
-			$( '#camilladsp' ).toggleClass( 'disabled', data.btreceiver );
-		} else if ( page === 'system' ) {
-			$( '#bluetooth' ).toggleClass( 'disabled', data.connected );
-		}
-	} else if ( page === 'networks' ) {
-		S.listbt = data;
-		renderBluetooth();
-	}
-	bannerHide();
-}
-function psCamilla( data ) {
-	S.range = data;
-	$( '#volume' ).prop( { min: S.range.VOLUMEMIN, max: S.range.VOLUMEMAX } )
-	$( '.tab input[type=range]' ).prop( { min: S.range.GAINMIN, max: S.range.GAINMAX } );
-}
-function psMpdPlayer( data ) {
-	if ( ! [ 'camilla', 'player' ].includes( page ) ) return
-	
-	[ 'player', 'state' ].forEach( k => S[ k ] = data[ k ] );
-	playbackButton();
-}
-function psMpdUpdate( data ) {
-	if ( page === 'player' && 'done' in data ) {
-		S.counts     = data.done;
-		S.updatetime = data.updatetime
-		renderStatus();
-	}
-}
-function psPlayer( data ) {
-	var player_id = {
-		  airplay   : 'shairport-sync'
-		, bluetooth : 'bluetooth'
-		, snapcast  : 'snapserver'
-		, spotify   : 'spotifyd'
-		, upnp      : 'upmpdcli'
-	}
-	$( '#'+ player_id[ data.player ] ).toggleClass( 'disabled', data.active );
-}
-function psRefresh( data ) {
 	if ( data.page !== page ) return
 	
-	clearTimeout( V.debounce );
-	V.debounce = setTimeout( () => {
-		$.each( data, ( k, v ) => { S[ k ] = v } ); // need braces
-		if ( page === 'networks' ) {
-			if ( $( '#divinterface' ).hasClass( 'hide' ) ) $( '.back' ).trigger( 'click' );
-		} else {
-			switchSet();
-		}
-		renderPage();
-	}, 300 );
-}
-function psReload( data ) {
-	if ( localhost ) location.reload();
-}
-function psStorage( data ) {
-	if ( page === 'system' ) {
-		S.list = data.list;
-		renderStorage();
-		if ( ! $( '#data' ).hasClass( 'hide' ) ) $( '#data' ).html( highlightJSON( S ) )
+	switch ( channel ) {
+		case 'bluetooth': ps.bluetooth( data ); break;
+		case 'camilla':   ps.camilla( data );   break;
+		case 'mpdplayer':
+		case 'mpdradio':  ps.mpdPlayer( data ); break;
+		case 'mpdupdate': ps.mpdUpdate( data ); break; // in player.js
+		case 'notify':    ps.notify( data );    break; // in common.js
+		case 'player':    ps.player( data );    break;
+		case 'power':     ps.power( data );     break; // in common.js
+		case 'reboot':    ps.reboot( data );    break;
+		case 'refresh':   ps.refresh( data );   break;
+		case 'relays':    ps.relays( data );    break; // in common.js
+		case 'reload':    ps.reload( data );    break;
+		case 'storage':   ps.storage( data );   break; // in system.js
+		case 'volume':    ps.volume( data );    break; // in player.js
+		case 'wlan':      ps.wlan( data );      break;
 	}
 }
-function psVolume() {
-	return
-}
-function psWlan( data ) {
-	if ( data && 'reboot' in data ) {
-		info( {
-			  icon    : 'wifi'
-			, title   : 'Wi-Fi'
-			, message : 'Reboot to connect <wh>'+ data.ssid +'</wh> ?'
-			, oklabel : ico( 'reboot' ) +'Reboot'
-			, okcolor : orange
-			, ok      : () => bash( [ 'power.sh', 'reboot' ] )
-		} );
+ps = {
+	  ...ps // from settings.js
+	, bluetooth : data => { // from networks-data,sh
+		if ( ! data ) {
+			if ( page === 'networks' ) {
+				S.listbt = data;
+				render.bluetooth();
+			} else if ( page === 'system' ) {
+				$( '#bluetooth' ).removeClass( 'disabled' );
+			}
+		} else if ( 'connected' in data ) {
+			if ( page === 'features' ) {
+				$( '#camilladsp' ).toggleClass( 'disabled', data.btreceiver );
+			} else if ( page === 'system' ) {
+				$( '#bluetooth' ).toggleClass( 'disabled', data.connected );
+			}
+		} else if ( page === 'networks' ) {
+			S.listbt = data;
+			render.bluetooth();
+		}
+		bannerHide();
+	}
+	, camilla   : data => {
+		S.range = data;
+		$( '#volume' ).prop( { min: S.range.VOLUMEMIN, max: S.range.VOLUMEMAX } )
+		$( '.tab input[type=range]' ).prop( { min: S.range.GAINMIN, max: S.range.GAINMAX } );
+	}
+	, mpdPlayer : data => {
+		if ( ! [ 'camilla', 'player' ].includes( page ) ) return
+		
+		[ 'player', 'state' ].forEach( k => S[ k ] = data[ k ] );
+		playbackButton();
+	}
+	, mpdUpdate : () => {
 		return
 	}
-	
-	$.each( data, ( k, v ) => { S[ k ] = v } );
-	renderWlan();
+	, player    : data => {
+		var player_id = {
+			  airplay   : 'shairport-sync'
+			, bluetooth : 'bluetooth'
+			, snapcast  : 'snapserver'
+			, spotify   : 'spotifyd'
+			, upnp      : 'upmpdcli'
+		}
+		$( '#'+ player_id[ data.player ] ).toggleClass( 'disabled', data.active );
+	}
+	, reboot    : data => {
+		var msg = '';
+		data.id.forEach( id => msg += '<div> • '+ $( '#div'+ id +' .label' ).text() +'</div>' );
+		banner( 'reboot', 'Reboot required', msg, 5000 );
+	}
+	, refresh   : data => {
+		clearTimeout( V.debounce );
+		V.debounce = setTimeout( () => {
+			$.each( data, ( k, v ) => { S[ k ] = v } ); // need braces
+			if ( page === 'networks' ) {
+				if ( $( '#divinterface' ).hasClass( 'hide' ) ) $( '.back' ).trigger( 'click' );
+			} else {
+				switchSet();
+			}
+			renderPage();
+		}, 300 );
+	}
+	, reload    : data => {
+		if ( localhost ) location.reload();
+	}
+	, storage   : data => { // system.js
+		return
+	}
+	, volume    : () => { // camilla.js, player.js, system.js
+		return
+	}
+	, wlan      : data => {
+		if ( data && 'reboot' in data ) {
+			info( {
+				  icon    : 'wifi'
+				, title   : 'Wi-Fi'
+				, message : 'Reboot to connect <wh>'+ data.ssid +'</wh> ?'
+				, oklabel : ico( 'reboot' ) +'Reboot'
+				, okcolor : orange
+				, ok      : () => bash( [ 'power.sh', 'reboot' ] )
+			} );
+			return
+		}
+		
+		$.each( data, ( k, v ) => { S[ k ] = v } );
+		render.wlan();
+	}
 }
 //---------------------------------------------------------------------------------------
-document.title = page === 'camilla' ? 'Camilla DSP' : page[ 0 ].toUpperCase() + page.slice( 1 );
+document.title = page === 'camilla' ? 'CamillaDSP' : capitalize( page );
 localhost ? $( 'a' ).removeAttr( 'href' ) : $( 'a[href]' ).attr( 'target', '_blank' );
 $( '#'+ page ).addClass( 'active' );
 
@@ -409,9 +402,7 @@ $( '.page-icon' ).on( 'click', function() {
 	if ( $.isEmptyObject( S ) ) return
 	
 	$( '#data' ).html( highlightJSON( S ) )
-	$( '.container' ).addClass( 'hide' );
 	$( '#button-data, #data' ).removeClass( 'hide' );
-	$( 'html, body' ).scrollTop( 0 );
 } );
 $( '#button-data' ).on( 'click', function() {
 	switchSet();
@@ -420,14 +411,14 @@ $( '#button-data' ).on( 'click', function() {
 } );
 $( '.container' ).on( 'click', '.status .headtitle, .col-l.status', function() {
 	var $this = $( this );
-	var id    = $this.hasClass( 'col-l' ) ? $this.data( 'status' ) : $this.parent().data( 'status' );
+	var id    = $this.data( 'status' );
 	var $code = $( '#code'+ id );
 	$code.hasClass( 'hide' ) ? currentStatus( id ) : $code.addClass( 'hide' );
 	$this.toggleClass( 'active' );
 } );
 $( '.playback' ).on( 'click', function() { // for player and camilla
 	S.state = S.state === 'play' ? 'pause' : 'play';
-	if ( page === 'camilla' && S.state === 'pause' ) render.vuClear();
+	if ( page === 'camilla' && S.state === 'pause' ) render.statusStop();
 	playbackButton();
 	bash( [ 'cmd.sh', 'mpcplayback' ] );
 } );
@@ -447,7 +438,7 @@ $( '.helphead' ).on( 'click', function() {
 	}
 } );
 $( '#close' ).on( 'click', function() {
-	bash( [ 'settings/system.sh', 'rebootlist' ], list => {
+	bash( 'data-config.sh reboot', list => {
 		if ( ! list ) {
 			location.href = '/';
 			return
@@ -455,8 +446,7 @@ $( '#close' ).on( 'click', function() {
 		
 		var message = '<wh>Reboot required for:</wh>';
 		list.split( '\n' ).forEach( id => {
-			var label = id === 'localbrowser' ? 'Rotate Browser on RPi' : $( '#div'+ id +' .label' ).eq( 0 ).text();
-			message += '<br>'+ ico( id ) +' '+ label;
+			message += '<br>'+ ico( id ) +' '+ $( '#div'+ id +' .label' ).eq( 0 ).text();
 		} );
 		info( {
 			  icon         : page
@@ -468,7 +458,7 @@ $( '#close' ).on( 'click', function() {
 			, oklabel      : ico( 'reboot' ) +'Reboot'
 			, ok           : () => infoPowerCommand( 'reboot' )
 		} );
-	} );
+	}, 'text' );
 } );
 $( '.help' ).on( 'click', function() {
 	var $this  = $( this );
@@ -477,57 +467,90 @@ $( '.help' ).on( 'click', function() {
 	$helpblock.toggleClass( 'hide' );
 	$( '.helphead' ).toggleClass( 'bl', $( '.help' ).hasClass( 'bl' ) );
 } );
-$( '.setting, .switch' ).on( 'click', function() {
+$( '#bar-bottom div' ).on( 'click', function() {
+	loader();
+	location.href = 'settings.php?p='+ this.id;
+} );
+if ( $( '#menu' ).length ) {
+	$( 'body' ).on( 'click', function( e ) {
+		$( '#menu' ).addClass( 'hide' );
+		$( 'li' ).removeClass( 'active' );
+		if ( ! $( e.target ).is( 'pre.status' ) ) $( '.entries' ).siblings( 'pre' ).last().addClass( 'hide' );
+	} );
+}
+$( '.switch, .setting' ).on( 'click', function() {
 	if ( V.local ) return
 	
 	local();
-	switchIdIconTitle( this.id );
+	var id   = this.id.replace( 'setting-', '' );
+	var icon = id;
+	if ( page === 'player' ) {
+		icon = 'mpd';
+	} else if ( page === 'camilla' ) {
+		icon = V.tab || 'camilladsp';
+	}
+	SW = {
+		  id       : id
+		, icon     : icon
+		, title    : $( '#div'+ id +' .col-l .label' ).text()
+		, disabled : $( this ).hasClass( 'disabled' )
+	}
 } );
 $( '.switch' ).on( 'click', function() {
+	var id = SW.id;
 	var $this   = $( this );
 	var checked = $this.prop( 'checked' );
-	if ( $this.hasClass( 'disabled' ) ) {
+	if ( $this.hasClass( 'disabled' ) ) {     // disabled
 		$this.prop( 'checked', ! checked );
 		info( {
-			  icon    : SW.icon
-			, title   : SW.title
+			  ...SW
 			, message : $this.prev().html()
 		} );
 		return
 	}
 	
-	if ( $this.is( '.custom, .none' ) ) return
-	
-	if ( ! checked ) {
-		$( '#setting-'+ SW.id ).addClass( 'hide' );
-		notifyCommon( 'Disable ...' );
-		bash( [ SW.id, 'OFF' ] );
-		S[ SW.id ] = false;
-		return
-	}
-	
-	if ( $this.hasClass( 'common' ) ) {
-		$( '#setting-'+ SW.id ).trigger( 'click' );
-	} else {
-		S[ SW.id ]  = true;
-		notifyCommon( checked );
-		bash( [ SW.id ], error => {
-			if ( error ) {
-				S[ SW.id ] = false;
-				$( '#setting-'+ SW.id ).addClass( 'hide' );
-				bannerHide();
-				info( {
-					  icon    : SW.icon
-					, title   : SW.title
-					, message : error
-				} );
-			}
-		}, 'json' );
+	$this.addClass( 'disabled' );
+	var $setting = $( '#setting-'+ id ); 
+	if ( checked ) {                  // enable
+		if ( id in config ) {                //    config
+			$setting.trigger( 'click' );
+		} else if ( id in config._prompt ) { //    prompt
+			$this.prop( 'checked', false );
+			config._prompt[ id ]();
+		} else {                             //    no config
+			S[ id ] = true;
+			notifyCommon( true );
+			bash( [ id ], error => {
+				if ( error ) {
+					S[ id ] = false;
+					switchSet();
+					bannerHide();
+					info( {
+						  ...SW
+						, message : error
+					} );
+				}
+			}, 'text' );
+		}
+	} else {                                 // disable
+		$( '#setting-'+ id ).addClass( 'hide' );
+		if ( page === 'camilla' ) {
+			DEV[ id ] = null;
+			setting.save( SW.title, 'Disable ...' );
+			$setting.addClass( 'hide' );
+		} else if ( id in config._disable ) {
+			config._disable[ id ]();
+		} else {
+			notifyCommon( 'Disable ...' );
+			bash( [ id, 'OFF' ] );
+		}
 	}
 } );
-$( '#bar-bottom div' ).on( 'click', function() {
-	if ( page === 'camilla' ) return
-	
-	loader();
-	location.href = 'settings.php?p='+ this.id;
+$( '.setting' ).on( 'click', function() {
+	var id = SW.id;
+	if ( config[ id ].toString()[ 1 ] === ')' ) { // no data to get
+		config[ id ]();
+	} else {
+		infoSetting( id );
+	}
 } );

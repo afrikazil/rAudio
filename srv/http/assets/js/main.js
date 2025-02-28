@@ -17,12 +17,12 @@ V = {   // var global
 	, wH            : window.innerHeight
 	, wW            : window.innerWidth
 };
-[ 'bioartist',     'query' ].forEach(                                                     k => V[ k ] = []    );
-[ 'interval',      'list',         'scrolltop',   'status' ].forEach(                     k => V[ k ] = {}    );
-[ 'guide',         'library',      'librarylist', 'local', 'pladd', 'playlist' ].forEach( k => V[ k ] = false );
-[ 'lyrics',        'lyricsartist', 'mode' ].forEach(                                      k => V[ k ] = ''    );
-[ 'modescrolltop', 'rotate' ].forEach(                                                    k => V[ k ] = 0     );
-[ 'playback',      'playlisthome' ].forEach(                                              k => V[ k ] = true     );
+[ 'bioartist',     'query' ].forEach(                                                     k => V[ k ] = [] );
+[ 'interval',      'list',         'scrolltop',   'status' ].forEach(                     k => V[ k ] = {} );
+[ 'guide',         'library',      'librarylist', 'local', 'playlist' ].forEach( k => V[ k ] = false );
+[ 'lyrics',        'lyricsartist', 'mode' ].forEach(                                      k => V[ k ] = '' );
+[ 'modescrolltop', 'rotate' ].forEach(                                                    k => V[ k ] = 0 );
+[ 'playback',      'playlisthome' ].forEach(                                              k => V[ k ] = true );
 var $bartop     = $( '#bar-top' );
 var $time       = $( '#time-knob' );
 var $volume     = $( '#volume-knob' );
@@ -181,7 +181,6 @@ $( '#button-settings' ).on( 'click', function( e ) {
 			  icon       : 'lock'
 			, title      : 'Settings'
 			, list       : [ '', 'password' ]
-			, focus      : 0
 			, checkblank : true
 			, oklabel    : 'Login'
 			, ok         : () => {
@@ -200,9 +199,9 @@ $( '#button-settings' ).on( 'click', function( e ) {
 	}
 	
 	if ( $( '#settings' ).hasClass( 'hide' ) ) {
-		if ( ! $( '#displaycolor canvas' ).length ) { // color icon
-			$( '#displaycolor' ).html( '<canvas></canvas>' );
-			var canvas = $( '#displaycolor canvas' )[ 0 ];
+		if ( ! $( '#color canvas' ).length ) { // color icon
+			$( '#color' ).html( '<canvas></canvas>' );
+			var canvas = $( '#color canvas' )[ 0 ];
 			var ctx    = canvas.getContext( '2d' );
 			var cw     = canvas.width / 2;
 			var ch     = canvas.height / 2;
@@ -235,7 +234,7 @@ $( '#settings' ).on( 'click', '.settings', function() {
 		case 'dsp':
 			$this.hasClass( 'i-camilladsp' ) ? location.href = 'settings.php?p=camilla' : equalizer();
 			break;
-		case 'logout':
+		case 'lock':
 			$.post( 'cmd.php', { cmd: 'logout' }, () => location.reload() );
 			break;
 		case 'snapclient':
@@ -243,8 +242,8 @@ $( '#settings' ).on( 'click', '.settings', function() {
 			if ( active ) {
 				$( '#stop' ).trigger( 'click' );
 			} else {
-				bash( [ 'snapclient.sh' ], data => {
-					if ( data == -1 ) {
+				bash( [ 'snapserverlist' ], data => {
+					if ( ! data.length ) {
 						delete V.bannerdelay;
 						bannerHide();
 						info( {
@@ -252,8 +251,21 @@ $( '#settings' ).on( 'click', '.settings', function() {
 							, title   : 'SnapClient'
 							, message : 'No SnapServers found.'
 						} );
+						return
 					}
-				} );
+					
+					if ( data.length === 1 ) {
+						bash( [ 'snapclient.sh', data[ 0 ].replace( /.* /, '' ) ] );
+					} else {
+						info( {
+							  icon    : 'snapcast'
+							, title   : 'SnapClient'
+							, message : 'Select server:'
+							, list    : [ '', 'radio', { kv: data } ]
+							, ok      : () => bash( [ 'snapclient.sh', infoVal().replace( /.* /, '' ) ] )
+						} );
+					}
+				}, 'json' );
 			}
 			banner( 'snapcast blink', 'SnapClient', ( active ? 'Stop ...' : 'Start ...' ) );
 			break;
@@ -261,17 +273,17 @@ $( '#settings' ).on( 'click', '.settings', function() {
 			$( '#stop' ).trigger( 'click' );
 			bash( [ 'relays.sh', S.relayson ? 'off' : '' ] );
 			break;
-		case 'guide':
+		case 'help':
 			location.href = 'settings.php?p=guide';
 			break;
 		case 'screenoff':
 			bash( [ 'screenoff' ] );
 			V.screenoff = true;
 			break;
-		case 'update':
+		case 'refresh-library':
 			$( '#button-lib-update' ).trigger( 'click' );
 			break;
-		case 'displaycolor':
+		case 'color':
 			V.color = true;
 			if ( V.library ) {
 				V.librarylist && V.mode !== 'album' ? colorSet() : $( '.mode.webradio' ).trigger( 'click' );
@@ -435,7 +447,7 @@ $( 'body' ).on( 'click', '#colorok', function() {
 		, beforeshow : () => {
 			$( '#infoIcon' ).html( '<canvas></canvas>' );
 			var ctx = $( '#infoIcon canvas' )[ 0 ].getContext( '2d' );
-			ctx.drawImage( $( '#displaycolor canvas' )[ 0 ], 0, 0 );
+			ctx.drawImage( $( '#color canvas' )[ 0 ], 0, 0 );
 		}
 		, ok         : () => {
 			bash( [ 'color', 'reset', 'CMD HSL' ] );
@@ -472,7 +484,6 @@ $( '#playback' ).on( 'click', function() {
 	}
 } );
 $( '#playlist, #button-playlist' ).on( 'click', function() {
-	if ( ! V.local ) V.pladd = false;
 	if ( V.playlist ) {
 		if ( ! V.playlisthome ) playlistGet();
 	} else {
@@ -642,6 +653,9 @@ $( '#volume' ).roundSlider( {
 		
 		if ( V.press ) {
 			var diff  = 3;
+		} if ( 'volumediff' in V ) {
+			var diff = V.volumediff;
+			delete V.volumediff;
 		} else {
 			var diff  = Math.abs( e.value - S.volume || S.volume - S.volumemute ); // change || mute/unmute
 		}
@@ -713,8 +727,8 @@ $( '#volume-band' ).on( 'touchstart mousedown', function() {
 		volumeSet();
 	}
 	$volumeRS.setValue( S.volume );
-	V.volume = V.drag = false;
-	V.volumebar = setTimeout( volumeBarHide, 3000 );
+	V.volume    = V.drag = false;
+	V.volumebar = volumeBarHide();
 } ).on( 'mouseleave', function() {
 	V.volume = V.drag = false;
 } );
@@ -739,7 +753,7 @@ $( '#voldn, #volup, #volT, #volB, #volL, #volR, #volume-band-dn, #volume-band-up
 	} else {
 		$volumeRS.setValue( S.volume );
 		clearTimeout( V.volumebar );
-		V.volumebar = setTimeout( volumeBarHide, 3000 );
+		V.volumebar = volumeBarHide();
 	}
 	volumePush();
 } ).press( function( e ) {
@@ -787,14 +801,14 @@ var btnctrl = {
 	, B  : 'stop'
 	, BR : 'repeat'
 }
-$( '.map' ).on( 'click', function( e ) {
+$( '#map-cover .map' ).on( 'click', function( e ) {
 	e.stopPropagation();
 	if ( V.press ) return
 	
 	if ( $( '#info' ).hasClass( 'hide' ) ) {
 		$( '#info' ).removeClass( 'hide' );
 		clearTimeout( V.volumebar );
-		volumeBarHide();
+		volumeBarHide( 'nodelay' );
 		return
 		
 	} else if ( 'screenoff' in V ) {
@@ -974,7 +988,6 @@ $( '.btn-cmd' ).on( 'click', function() {
 			playlistSkip();
 		}
 	}
-	if ( $( '#relays' ).hasClass( 'on' ) && cmd === 'play' ) bash( [ 'relaystimerreset' ] );
 } );
 $( '#previous, #next, #coverR, #coverL' ).press( function( e ) {
 	var next = [ 'next', 'coverR' ].includes( e.target.id );
@@ -986,19 +999,17 @@ $( '#previous, #next, #coverR, #coverL' ).press( function( e ) {
 } );
 $( '#bio' ).on( 'click', '.biosimilar', function() {
 	bio( $( this ).text(), 'getsimilar' );
-} );
-$( '#bio' ).on( 'click', '.bioback', function() {
+} ).on( 'click', '.bioback', function() {
 	V.bioartist.pop();
 	var getsimilar = V.bioartist.length > 1 ? 'getsimilar' : '';
 	bio( V.bioartist.pop(), getsimilar );
-} );
-$( '#bio' ).on( 'click', '.i-close', function() {
+} ).on( 'click', '.i-close', function() {
 	V.bioartist = [];
 	$( '#bio' ).addClass( 'hide' );
 	if ( 'observer' in V ) V.observer.disconnect();
 } );
 // LIBRARY /////////////////////////////////////////////////////////////////////////////////////
-$( '#lib-breadcrumbs' ).on( 'click', 'a', function() {
+$( '#lib-title' ).on( 'click', 'a', function() {
 	V.query = [];
 	delete V.gmode;
 	if ( V.query.length > 1 ) V.scrolltop[ V.query.slice( -1 )[ 0 ].modetitle ] = $( window ).scrollTop();
@@ -1027,15 +1038,8 @@ $( '#lib-breadcrumbs' ).on( 'click', 'a', function() {
 	query.path      = path;
 	query.modetitle = path;
 } );
-$( '#lib-breadcrumbs' ).on( 'click', '.button-webradio-new', function() {
+$( '#lib-title' ).on( 'click', '.button-webradio-new', function() {
 	webRadioNew();
-} ).on( 'click', '.button-dab-refresh', function() {
-	info( {
-		  icon     : 'dabradio'
-		, title    : 'DAB Radio'
-		, message  : ( $( '#lib-list li' ).length ? 'Rescan' : 'Scan' ) +' digital radio stations?'
-		, ok       : () => bash( [ 'dabscan' ] )
-	} );
 } ).on( 'click', '.button-latest-clear', function() {
 	if ( V.librarytrack ) {
 		info( {
@@ -1055,7 +1059,7 @@ $( '#lib-breadcrumbs' ).on( 'click', '.button-webradio-new', function() {
 		} );
 	}
 } );
-$( '#lib-breadcrumbs' ).on ( 'click', '.button-coverart', function() {
+$( '#lib-title' ).on ( 'click', '.button-coverart', function() {
 	infoThumbnail( $( '.button-coverart' )[ 0 ].outerHTML, 'With coverarts in folder of each album:', '' );
 } );
 $( '#button-lib-update' ).on( 'click', function() {
@@ -1072,7 +1076,7 @@ $( '#button-lib-update' ).on( 'click', function() {
 	}
 	
 	var message = '';
-	[ 'nas', 'sd', 'usb' ].forEach( k => message += ' &emsp; <label><input type="checkbox"><i class="i-'+ k +'"></i>'+ k.toUpperCase() +'</label>' );
+	[ 'nas', 'sd', 'usb' ].forEach( k => message += sp( 20 ) +'<label><input type="checkbox"><i class="i-'+ k +'"></i>'+ k.toUpperCase() +'</label>' );
 	var kv   = {
 		  'Update changed files'    : 'update'
 		, 'Update all files'        : 'rescan'
@@ -1180,7 +1184,7 @@ $( '#lib-search-input' ).on( 'input', function( e ) {
 	if ( e.key === 'Enter' ) $( '#button-lib-search' ).trigger( 'click' );
 } );
 $( '#button-lib-back' ).on( 'click', function() {
-	var $breadcrumbs = $( '#lib-breadcrumbs a' );
+	var $breadcrumbs = $( '#lib-title a' );
 	var bL           = $breadcrumbs.length
 	if ( ( bL && bL < 2 ) || ( ! bL && V.query.length < 2 ) ) {
 		$( '#library' ).trigger( 'click' );
@@ -1311,8 +1315,14 @@ $( '#lib-mode-list' ).on( 'click', function( e ) {
 	
 	var path  = $this.find( '.lipath' ).text();
 	V.mode    = path.split( '/' )[ 0 ].toLowerCase();
+	if ( V.mode === 'webradio' ) {
+		path = path.slice( 9 );
+		var library = 'radio';
+	} else {
+		var library = 'ls';
+	}
 	var query = {
-		  library : 'ls'
+		  library : library
 		, string  : path
 		, gmode   : V.mode
 	}
@@ -1384,6 +1394,8 @@ $( '#lib-mode-list' ).on( 'click', function( e ) {
 		, button      : ! thumbnail ? '' : () => bash( [ 'bookmarkcoverreset', name, 'CMD NAME' ] )
 		, ok          : () => imageReplace( 'bookmark', imagefilenoext, name ) // no ext
 	} );
+} ).on( 'click', '.dabradio.nodata', function() {
+	infoDabScan();
 } ).press( '.mode.bookmark', setBookmarkEdit );
 new Sortable( document.getElementById( 'lib-mode-list' ), {
 	// onChoose > onClone > onStart > onMove > onChange > onUnchoose > onUpdate > onSort > onEnd
@@ -1523,6 +1535,7 @@ $( '#page-library' ).on( 'click', '#lib-list .coverart', function() {
 		}
 		var modetitle = modefile ? path : $( '#mode-title' ).text();
 	} else if ( V.mode.slice( -5 ) === 'radio' ) { // dabradio, webradio
+		if ( libpath ) path = libpath +'/'+ path;
 		if ( $this.hasClass( 'dir' ) ) {
 			var query = {
 				  library : 'radio'
@@ -1628,9 +1641,8 @@ $( '.page' ).on( 'click', 'a.indexed', function() {
 } );
 // PLAYLIST /////////////////////////////////////////////////////////////////////////////////////
 $( '#button-pl-back' ).on( 'click', function() {
-	if ( V.pladd ) {
+	if ( 'pladd' in V ) {
 		I.active  = false;
-		V.pladd   = false;
 		playlistGet();
 		bannerHide();
 	} else {
@@ -1696,14 +1708,16 @@ $( '#button-pl-clear' ).on( 'click', function() {
 		info( {
 			  icon       : 'playlist'
 			, title      : 'Remove From Playlist'
-			, list       : [
-				  [ '', 'radio', { kv: { '<i class="i-remove"></i>    <gr>Select...</gr>' : 'select' } } ]
-				, [ '', 'radio', { kv: { '<i class="i-track"></i>     <gr>Range...</gr>'  : 'range'  } } ]
-				, [ '', 'radio', { kv: { '<i class="i-crop yl"></i>   <gr>Crop</gr>'      : 'crop'   } } ]
-				, [ '', 'radio', { kv: { '<i class="i-flash red"></i> <gr>All</gr>'       : 'all'    } } ]
-			]
+			, list       : [ '', 'radio', { 
+				  kv       : {
+					  '<i class="i-flash red"></i> All'        : 'all'
+					, '<i class="i-cursor"></i>    Select ...' : 'select'
+					, '<i class="i-track"></i>     Range ...'  : 'range'
+					, '<i class="i-crop yl"></i>   Crop'       : 'crop'
+				}
+				, sameline : false
+			} ]
 			, beforeshow : () => {
-				$( '#infoList input:checked' ).prop( 'checked', false );
 				$( '#infoList input' ).on( 'input', function() {
 					var cmd = $( '#infoList input:checked' ).val();
 					switch ( cmd ) {
@@ -1714,30 +1728,21 @@ $( '#button-pl-clear' ).on( 'click', function() {
 							local();
 							break;
 						case 'range':
-							var param = { updn: { step: 1, min: 1, max: S.pllength, enable: true } }
-							info( {
-								  icon     : 'playlist'
-								, title    : 'Remove Range'
-								, list     : [ [ 'Start', 'number', param ], [ 'End', 'number', param ] ]
-								, boxwidth : 80
-								, values   : [ 1, S.pllength ]
-								, ok       : () => bash( [ 'mpcremove', ...infoVal(), 'CMD START END' ] )
-							} );
+							playlistRemoveRange();
 							break;
 						case 'crop':
 							bash( [ 'mpccrop' ] );
 							$( '#pl-list li:not( .active )' ).remove();
 							break;
-						case 'all':
-							bash( [ 'mpcremove' ] );
-							setPlaybackBlank();
-							renderPlaylist();
-							break;
 					}
 					$( '#infoX' ).trigger( 'click' );
 				} );
 			}
-			, okno       : true
+			, ok         : () => {
+				bash( [ 'mpcremove' ] );
+				setPlaybackBlank();
+				renderPlaylist();
+			}
 		} );
 	}
 } );
@@ -1820,6 +1825,15 @@ new Sortable( document.getElementById( 'pl-savedlist' ), {
 	}
 } );
 $( '#pl-list' ).on( 'click', 'li', function( e ) {
+	if ( 'plrange' in V ) {
+		var pos     = $( this ).index() + 1;
+		var inrange = V.rangei ? pos > V.plrange[ 0 ] : pos < V.plrange[ 1 ];
+		inrange ? V.plrange[ V.rangei ] = pos : V.plrange = [ pos, pos ];
+		playlistRemoveRange( V.plrange );
+		delete V.rangei;
+		return
+	}
+	
 	e.stopPropagation();
 	$target = $( e.target );
 	if ( $target.is( '.i-save, .li-icon, .pl-remove' ) ) return
@@ -1860,6 +1874,8 @@ $( '#pl-list' ).on( 'click', 'li', function( e ) {
 		$this.add( '#play' ).addClass( 'active' );
 	}
 } ).on( 'click', '.li-icon, .savewr', function() {
+	if ( 'plrange' in V ) return
+	
 	var $this     = $( this );
 	var $thisli   = $this.parent();
 	var webradio  = $this.hasClass( 'webradio' );
@@ -1904,13 +1920,13 @@ $( '#pl-list' ).on( 'click', 'li', function( e ) {
 } ).on( 'click', '.pl-remove', function() { // remove from playlist
 	playlistRemove( $( this ).parent() );
 } );
-$( '#savedpl-path' ).on( 'click', '.savedlist', function() {
+$( '#pl-title' ).on( 'click', '.savedlist', function() {
 	var $menu   = $( '#menu-playlist' );
 	var active = ! $menu.hasClass( 'hide' );
 	menuHide();
 	if ( active ) return
 	
-	V.list.path = $( '#savedpl-path .lipath' ).text();
+	V.list.path = $( '#pl-title .lipath' ).text();
 	$menu.find( '.plrename, .pldelete' ).addClass( 'hide' );
 	contextmenuScroll( $menu, 88 );
 } );
@@ -1925,7 +1941,7 @@ $( '#page-playlist' ).on( 'click', '#pl-savedlist li', function( e ) {
 	
 	var liicon   = $target.hasClass( 'li-icon' );
 	if ( V.playlisttrack || liicon ) {
-		if ( V.pladd ) {
+		if ( 'pladd' in V ) {
 			V.pladd.index = $this.index();
 			V.pladd.track = $this.find( '.li1 .name' ).text()
 							+'<br><gr>'+ $this.find( '.li2 .name' ).text() +'</gr>';
@@ -1968,7 +1984,7 @@ $( '#page-playlist' ).on( 'click', '#pl-savedlist li', function( e ) {
 	} else {
 		var name = $this.find( '.lipath' ).text();
 		renderSavedPlTrack( name );
-		if ( V.pladd ) {
+		if ( 'pladd' in V ) {
 			V.pladd.name = name;
 			playlistInsertTarget();
 		}
@@ -1992,26 +2008,28 @@ $( '#lyricsedit' ).on( 'click', function() {
 	$( '#lyricstextarea' )
 		.val( V.lyrics )
 		.scrollTop( $( '#lyricstext' ).scrollTop() );
+	$( '#lyricsartist' ).css( 'width', 'calc( 100% - 124px )' );
 } );
 $( '#lyricsrefresh' ).on( 'click', function() {
 	$( this ).addClass( 'blink' );
 	lyricsGet( 'refresh' );
 } );
 $( '#lyrics' ).on( 'click', '.i-close',  function() {
-	if ( $( '#lyricstextarea' ).val() === V.lyrics || ! $( '#lyricstextarea' ).val() ) {
-		lyricsHide();
-	} else {
+	if ( $( '#lyricsedit' ).hasClass( 'hide' ) && $( '#lyricstextarea' ).val() !== V.lyrics ) {
 		info( {
 			  icon     : 'lyrics'
 			, title    : 'Lyrics'
 			, message  : 'Discard changes made to this lyrics?'
 			, ok       : lyricsHide
 		} );
+	} else {
+		lyricsHide();
 	}
 } );
 $( '#lyricsback' ).on( 'click', function() {
 	$( '#lyricseditbtngroup' ).addClass( 'hide' );
 	$( '#lyricsedit, #lyricstext' ).removeClass( 'hide' );
+	$( '#lyricsartist' ).css( 'width', '' );
 } );
 $( '#lyricsundo' ).on( 'click', function() {
 	info( {

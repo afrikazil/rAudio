@@ -6,29 +6,26 @@
 	}
 	, "r1" : {
 		  "title"       : "rAudio"
-		, "version"     : "20240921"
+		, "version"     : "20241206"
 		, "revision"    : [
-			  "Fix: Library - Tag Editor"
-			, "Fix: Library - Hide coverart band in track list"
-			, "Fix: Library - Latest albums"
-			, "Fix: Library - Web Radio - Replace and play"
-			, "Fix: Library - Index bar on short screen"
-			, "Fix: Playlist - Remove by range"
+			  "Fix: Player - Setting page error"
+			, "<a href='https://github.com/rern/rAudio/releases'>Change log</a>"
 		]
 		, "description" : "Updates for rAudio"
 		, "nouninstall" : 1
 		, "thumbnail"   : "/assets/img/coverart.svg"
 		, "sourcecode"  : "https://github.com/rern/rAudio"
 		, "installurl"  : "https://github.com/rern/rAudio/raw/main/install.sh"
-		, "verify"      : "[[ $( cat /srv/http/data/addons/r1 ) < 20240719 ]] && echo 1"
+		, "verify"      : "[[ $( cat /srv/http/data/addons/r1 ) < 20240818 ]] && echo 1"
 		, "notverified" : "Please download the latest image file to be able to update."
 	}
 	, "dab" : {
 		  "title"       : "DAB Radio"
-		, "description" : "Add Digital Audio Broadcasting radio reception capabilities<br>(RTL-SDR dongle required)"
+		, "description" : "Add Digital Audio Broadcasting radio reception capabilities<br>(USB SDR dongle required)"
 		, "thumbnail"   : "/assets/img/addons/thumbdab.jpg"
 		, "sourcecode"  : "https://github.com/vale-max/rAudio-addons/raw/main/dabradio"
 		, "installurl"  : "https://github.com/rern/rAudio-addons/raw/main/dabradio/install.sh"
+		, "postmessage" : "<a class='helpmenu tab'><i class='i-features'></i> Features</a><a class='helpmenu label'>DAB Radio<i class='i-dabradio'></i></a>"
 		, "hide"        : "[[ -e /usr/bin/mediamtx || -e /boot/kernel.img ]] && echo 1"
 	}
 	, "fran" : {
@@ -48,8 +45,10 @@
 		, "sourcecode"  : "https://github.com/rern/rAudio-addons/tree/main/rankmirrors"
 		, "installurl"  : "https://github.com/rern/rAudio-addons/raw/main/rankmirrors/rankmirrors.sh"
 		, "option"      : {
-			  "message": "Download test for each server:"
-			, "list"   : [ "Seconds", "number" ]
+			  "message"  : "Download test for each server:"
+			, "list"     : [ "Seconds", "number", { "updn": { "step": 1, "min": 2, "max": 10 } } ]
+			, "values"   : 3
+			, "boxwidth" : 80
 		}
 		, "hide"        : "[[ -e /boot/kernel.img ]] && echo 1"
 	}

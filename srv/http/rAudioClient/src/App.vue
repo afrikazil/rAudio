@@ -6,7 +6,7 @@ import { RouterView } from 'vue-router'
 import { usePlayerStore } from '@/store/player.js'
 const playerStore = usePlayerStore()
 const ws = new WebSocket(`ws://raudio.local:8181`)
-
+console.log('~~')
 function modifyPlayer(data) {
 	Object.entries(data).forEach(([key, value]) => {
 		if (key === 'coverart') {
