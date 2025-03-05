@@ -5,10 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
-    "local-dev": "npm-run-all -p middleware start",
     "start": "vite",
     "build": "vite build",
-    "middleware": "node ./middleware.js",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
     "format": "prettier --write src/"

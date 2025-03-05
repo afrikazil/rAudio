@@ -10,8 +10,8 @@
 			@click="togglePlayPause"
 			class="bg-green-500 hover:bg-green-600 text-white rounded-full p-4 focus:outline-none focus:ring-2 focus:ring-green-400 transition-colors duration-300"
 		>
-			<PlayIcon v-if="!isPlaying" class="w-8 h-8" />
-			<PauseIcon v-else class="w-8 h-8" />
+			<PauseIcon v-if="playerStore.playerState.state === PLAY" class="w-8 h-8" />
+			<PlayIcon v-else class="w-8 h-8" />
 		</button>
 		<button class="text-white" @click="changeTrack('next')">
 			<SkipForwardIcon class="w-8 h-8" />
@@ -31,20 +31,65 @@ import {
 	SkipBackIcon,
 	SkipForwardIcon
 } from 'lucide-vue-next'
-import { computed } from 'vue'
 import { usePlayerStore } from '@/store/player.js'
+import { PAUSE, PLAY } from '@/constants.js'
+import { websocketClient } from '@/WSocketService/index.js'
+import apiService from '@/apiService/apiService.js'
 
 const playerStore = usePlayerStore()
 
-const isPlaying = computed(() => playerStore.playerState.playbackStatus === 'play')
-function togglePlayPause() {
-	playerStore.playerState.playbackStatus =  isPlaying.value ? 'pause' : 'play'
+async function togglePlayPause() {
+	const newStatus = (playerStore.playerState.state = PLAY ? PAUSE : PLAY)
+	const apiRequestData = {
+		cmd: 'bash',
+		filesh: 'cmd.sh',
+		args: ['mpcplayback', `${newStatus}`, 'CMD ACTION', 'withdisplay']
+	}
 
-	playerStore.changePlaybackStatus({ command: playerStore.playerState.playbackStatus })
+	const socketMsg = { filesh: [apiRequestData.filesh, apiRequestData.args.join('\n')] }
+
+	if (websocketClient.isReady) {
+		websocketClient.sendMessage(socketMsg)
+		return
+	}
+
+	await playerStore.changePlaybackStatus(newStatus)
+
+	if (!websocketClient.isReady) {
+		await playerStore.getPlaybackState()
+	}
 }
 
-function changeTrack(command){
-	playerStore.changePlaybackStatus({ command })
+//
+async function changeTrack(type = 'prev') {
+	if (!playerStore.playerState.pllength) {
+		return
+	}
+
+	let nextSong = type === 'prev' ? playerStore.playerState.song : playerStore.playerState.song + 2
+
+	if (nextSong >= playerStore.playerState.pllength || nextSong < 0) {
+		nextSong = 0
+	}
+
+	const apiRequestData = {
+		cmd: 'bash',
+		filesh: 'cmd.sh',
+		args: ['mpcskippl', `${nextSong}`, 'play', 'CMD POS ACTION']
+	}
+
+	const socketMsg = { filesh: [apiRequestData.filesh, apiRequestData.args.join('\n')] }
+
+	if (websocketClient.isReady) {
+		websocketClient.sendMessage(socketMsg)
+		console.log('???????', playerStore.playerState)
+		// await playerStore.getPlaybackState()
+		return
+	}
+
+	await apiService.postFormData('/cmd.php', apiRequestData)
+
+	await playerStore.getPlaybackState()
 }
 </script>
 

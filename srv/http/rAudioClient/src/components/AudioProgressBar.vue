@@ -1,10 +1,10 @@
 <template>
 	<div class="px-3">
-		<div class="relative pt-1">
+		<div class="progress-bar-container">
 			<input
 				type="range"
 				min="0"
-				:max="playerState.time"
+				:max="playerState.Time"
 				:value="elapsed"
 				@input="onInput"
 				@change="onChanged"
@@ -15,7 +15,7 @@
 
 		<div class="flex justify-between text-gray-400 text-sm mt-2">
 			<span>{{ formatTime(elapsed) }}</span>
-			<span>{{ formatTime(playerState.time) }}</span>
+			<span>{{ formatTime(playerState.Time) }}</span>
 		</div>
 	</div>
 </template>
@@ -23,16 +23,17 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { usePlayerStore } from '@/store/player.js'
+import { PLAY } from '@/constants.js'
 
 const playerStore = usePlayerStore()
 const elapsed = ref(0)
-const newElepsed = ref(0);
+const newElepsed = ref(0)
 let timer = null
 
 const playerState = computed(() => playerStore.playerState)
 
 // Computed property for progress percentage
-const progress = computed(() => (elapsed.value / playerState.value.time) * 100)
+const progress = computed(() => (elapsed.value / playerState.value.Time) * 100)
 
 // Function to format time in MM:SS
 const formatTime = (time) => {
@@ -42,18 +43,16 @@ const formatTime = (time) => {
 }
 
 // Function to handle seeking
-function onInput(event){
-	newElepsed.value = event.target.value;
+function onInput(event) {
+	newElepsed.value = event.target.value
 	// Here you would also update the actual audio playback position
 }
 
-function onChanged(){
-	const perc = (newElepsed.value/playerState.value.time*100+1).toFixed(0)+"%";
-	newElepsed.value = 0;
-	playerStore.changePlaybackStatus({ command: `seek ${perc}`, params:{clearCommand: true }})
+function onChanged() {
+	const perc = ((newElepsed.value / playerState.value.Time) * 100 + 1).toFixed(0) + '%'
+	newElepsed.value = 0
+	playerStore.changePlaybackStatus({ command: `seek ${perc}`, params: { clearCommand: true } })
 }
-
-
 
 function stopInterval() {
 	if (timer) {
@@ -63,9 +62,10 @@ function stopInterval() {
 
 function startInterval() {
 	stopInterval()
+
 	timer = setInterval(() => {
 		elapsed.value++
-		if (elapsed.value > playerState.value.time) {
+		if (elapsed.value > playerState.value.Time) {
 			stopInterval()
 		}
 	}, 1000)
@@ -74,7 +74,12 @@ function startInterval() {
 watch(
 	playerState,
 	() => {
-		elapsed.value = playerState.value.currentTime
+		elapsed.value = playerState.value.elapsed
+		if (playerState.value.state !== PLAY) {
+			stopInterval()
+			return
+		}
+
 		startInterval()
 	},
 	{ deep: true }
@@ -88,16 +93,18 @@ input[type='range'] {
 	@apply w-full h-2 bg-gray-700 rounded-lg outline-none;
 }
 
-input[type='range']::-webkit-slider-thumb {
-	-webkit-appearance: none;
-	@apply w-4 h-4 bg-white rounded-full cursor-pointer relative z-20;
-}
-
+input[type='range']::-webkit-slider-thumb,
 input[type='range']::-moz-range-thumb {
-	@apply w-4 h-4 bg-white rounded-full cursor-pointer border-none  relative z-20;
+	@apply relative z-20 opacity-0;
+	-webkit-appearance: none;
+	@apply w-4 h-4 bg-white rounded-full cursor-pointer border-none;
 }
 
 .progress-bar {
 	@apply absolute left-0 top-0 h-2 bg-indigo-500 rounded-lg top-1/2 rounded-r-none;
+}
+
+.progress-bar-container {
+	@apply relative pt-1;
 }
 </style>

@@ -10,18 +10,18 @@
 		<!-- Cover Art -->
 		<div class="flex-1 flex items-center justify-center p-8">
 			<img
-				v-if="playerState.cover"
-				:src="`http://raudio.local${playerState.cover}`"
-				:key="playerState.title"
-				:alt="playerState.title"
+				v-if="playerState.coverart"
+				:src="playerState.coverart"
+				:key="playerState.Title"
+				:alt="playerState.Title"
 				class="w-full max-w-xs rounded-lg shadow-lg"
 			/>
 		</div>
 
 		<!-- Track Info -->
-		<div class="px-8 py-4 text-center" v-if="playerState.title">
-			<h2 class="text-2xl font-bold mb-2">{{ playerState.title }}</h2>
-			<p class="text-gray-400">{{ playerState.artist }}</p>
+		<div class="px-8 py-4 text-center" v-if="playerState.Title">
+			<h2 class="text-2xl font-bold mb-2">{{ playerState.Title }}</h2>
+			<p class="text-gray-400">{{ playerState.Artist }}</p>
 		</div>
 
 		<AudioProgressBar />

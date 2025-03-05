@@ -1,25 +1,37 @@
 class HttpService {
-	constructor(baseUrl = 'http://raudio.local/api') {
+	constructor(baseUrl = `http://${location.host}`) {
 		this.baseUrl = baseUrl
+	}
+
+	convertObjToFormData(dataObj = {}) {
+		const formData = new FormData()
+		Object.entries(dataObj).forEach(([key, value]) => {
+			if (Array.isArray(value)) {
+				value.forEach((arg) => formData.append(`${key}[]`, arg))
+			} else {
+				formData.append(key, `${value}`)
+			}
+		})
+		return formData
 	}
 
 	/**
 	 * Send a POST request with form data
 	 * @param {string} endpoint - The API endpoint
-	 * @param {FormData|Object} data - The form data to send
+	 * @param {Object} data - The data to send as FormData
 	 * @param {Object} options - Additional options for the fetch request
 	 * @returns {Promise<any>} - The response data
 	 */
 	async postFormData(endpoint, data, options = {}) {
 		const url = this.baseUrl + endpoint
 
-		const defaultOptions = {
+		const fetchOptions = {
 			method: 'POST',
-			body: data
+			body: this.convertObjToFormData(data),
+			...options
 		}
 
 		// Merge default options with user-provided options
-		const fetchOptions = { ...defaultOptions, ...options }
 
 		try {
 			const response = await fetch(url, fetchOptions)
