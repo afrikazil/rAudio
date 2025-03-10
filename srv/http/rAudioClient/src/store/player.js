@@ -149,6 +149,11 @@ export const usePlayerStore = defineStore('playerState', {
 			Object.entries(newState).forEach(([key, value]) => {
 				this.playerState[key] = value
 			})
+		},
+
+		seek() {
+			// { "filesh": [ "cmd.sh", "mpcseek\n86\nplay\nCMD ELAPSED STATE" ] }
+			// Perl to JavaScript conversion
 		}
 	}
 })

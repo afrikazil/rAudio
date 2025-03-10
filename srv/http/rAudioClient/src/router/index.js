@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
+import PlaybackPage from '../views/PlaybackPage.vue'
 import { PLAYER_PAGE } from '@/router/constants/routes.js'
 
 const router = createRouter({
@@ -7,7 +7,7 @@ const router = createRouter({
 	routes: [
 		{
 			...PLAYER_PAGE,
-			component: HomeView
+			component: PlaybackPage
 		}
 	]
 })
